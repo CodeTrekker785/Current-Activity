@@ -39,6 +39,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     lateinit var autoUpdate: SwitchPreferenceCompat
     lateinit var useSystemFont: SwitchPreferenceCompat
     lateinit var checkUpdate: Preference
+    lateinit var dexClassInspector: Preference
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
@@ -52,6 +53,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         autoUpdate = findPreference("auto_update")!!
         useSystemFont = findPreference("system_font")!!
         checkUpdate = findPreference("check_update")!!
+        dexClassInspector = findPreference("dex_class_inspector")!!
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
