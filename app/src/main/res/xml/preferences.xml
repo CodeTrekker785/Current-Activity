@@ -54,6 +54,17 @@
         app:iconSpaceReserved="false" />
 
     <androidx.preference.PreferenceCategory
+        android:title="Developer tools"
+        app:iconSpaceReserved="false">
+
+        <androidx.preference.Preference
+            android:key="dex_class_inspector"
+            android:title="DEX Class Inspector"
+            android:summary="Inspect class names inside an APK's DEX files"
+            app:iconSpaceReserved="false" />
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
         android:title="@string/group_miscellaneous"
         app:iconSpaceReserved="false">
 
