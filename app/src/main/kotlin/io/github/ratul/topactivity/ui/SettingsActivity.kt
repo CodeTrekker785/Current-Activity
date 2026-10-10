@@ -152,6 +152,10 @@ class SettingsActivity : AppCompatActivity() {
             requestAutoStartPermission(this)
             true
         }
+        fragment.dexClassInspector.onPreferenceClickListener = Preference.OnPreferenceClickListener {
+            startActivity(Intent(this, DexClassInspectorActivity::class.java))
+            true
+        }
         fragment.checkUpdate.onPreferenceClickListener = Preference.OnPreferenceClickListener {
             showMessage(R.string.checking_for_update)
             appUpdateManager.checkForUpdate()
