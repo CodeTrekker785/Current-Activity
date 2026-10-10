@@ -123,12 +123,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
                     } else {
                         buildString {
                             appendLine("DEX CLASS INSPECTOR REPORT")
-                            appendLine("APK: \${uri.lastPathSegment ?: "Selected APK"}")
-                            appendLine("DEX files found: \${dexReports.size}")
+                            appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
+                            appendLine("DEX files found: ${dexReports.size}")
                             appendLine()
                             dexReports.forEach { (name, classes) ->
                                 appendLine("=== $name ===")
-                                appendLine("Class count: \${classes.size}")
+                                appendLine("Class count: ${classes.size}")
                                 appendLine()
                                 if (classes.isEmpty()) appendLine("No class descriptors could be read.")
                                 classes.forEach { appendLine(it) }
@@ -139,7 +139,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                     }
                 } ?: "Could not open the selected file."
             } catch (e: Exception) {
-                "Could not inspect this file: \${e.message ?: e.javaClass.simpleName}"
+                "Could not inspect this file: ${e.message ?: e.javaClass.simpleName}"
             }
             runOnUiThread {
                 exportText = report
