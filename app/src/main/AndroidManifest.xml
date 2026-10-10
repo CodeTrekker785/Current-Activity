@@ -29,6 +29,10 @@
         </activity>
 
         <activity
+            android:name=".ui.DexClassInspectorActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.ClipboardActivity"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
