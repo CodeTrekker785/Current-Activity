@@ -46,28 +46,20 @@ android {
     }
 
     dependenciesInfo {
-        // Disables dependency metadata when building APKs (for IzzyOnDroid/F-Droid)
         includeInApk = false
-        // Enables dependency metadata when building Android App Bundles (for Google Play)
-        // Allows Google to scan dependencies for policy compliance
         includeInBundle = true
     }
 
     flavorDimensions 'version'
     productFlavors {
-        global {
-            dimension 'version'
-        }
-        playStore {
-            dimension 'version'
-        }
+        global { dimension 'version' }
+        playStore { dimension 'version' }
     }
 
     android.applicationVariants.all { variant ->
         variant.outputs.all { output ->
             def flavor = variant.flavorName
-            def apkName = "current-activity_${flavor}_v${variant.versionName}.apk"
-            output.outputFileName = apkName
+            output.outputFileName = "current-activity_${flavor}_v${variant.versionName}.apk"
         }
     }
 }
@@ -78,6 +70,8 @@ dependencies {
     implementation 'androidx.fragment:fragment-ktx:1.8.9'
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'com.android.volley:volley:1.2.1'
+    implementation 'org.smali:dexlib2:2.5.2'
+    implementation 'com.google.guava:guava:27.1-android'
 }
 
 configurations.all {
