@@ -18,13 +18,19 @@ import org.jf.dexlib2.iface.ClassDef
 import org.jf.dexlib2.iface.Field
 import org.jf.dexlib2.iface.Method
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
 
-/** APK DEX inspector: class metadata, fields, methods, annotations and disassembled instructions. */
+/**
+ * Memory-bounded APK DEX inspector. Large APKs are sampled rather than loading an
+ * unlimited report into the Android heap; users can inspect smaller APKs fully.
+ */
 class DexClassInspectorActivity : AppCompatActivity() {
     private lateinit var resultText: TextView
     private lateinit var statusText: TextView
     private var exportText = "No APK inspected yet."
+    @Volatile private var inspectionRunning = false
+
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) inspect(uri)
     }
@@ -41,13 +47,15 @@ class DexClassInspectorActivity : AppCompatActivity() {
             setNavigationOnClickListener { finish() }
         }, LinearLayout.LayoutParams(-1, dp(56)))
         root.addView(TextView(this).apply {
-            text = "Inspect class hierarchy, fields, methods, constructors, annotations, DEX instructions and the DEX string pool. Processing is local."
+            text = "Inspect class hierarchy, fields, methods, constructors, annotations and DEX instructions. Large APK reports are limited to protect phone memory. Processing is local."
             textSize = 15f
             setPadding(0, dp(12), 0, dp(12))
         })
         root.addView(Button(this).apply {
             text = "Select APK file"
-            setOnClickListener { picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*")) }
+            setOnClickListener {
+                if (!inspectionRunning) picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
+            }
         }, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
             text = "Export / Share report"
@@ -80,52 +88,99 @@ class DexClassInspectorActivity : AppCompatActivity() {
     }
 
     private fun inspect(uri: Uri) {
+        if (inspectionRunning) return
+        inspectionRunning = true
         statusText.text = "Reading APK and DEX contents…"
         resultText.text = ""
-        Thread {
+        Thread({
             val report = try {
                 contentResolver.openInputStream(uri)?.use { input ->
                     val dexEntries = mutableListOf<Pair<String, ByteArray>>()
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
-                        var e = zip.nextEntry
-                        while (e != null) {
-                            if (!e.isDirectory && Regex("(^|.*/)classes([0-9]+)?\\.dex").matches(e.name)) {
-                                dexEntries.add(e.name to zip.readBytes())
+                        var entry = zip.nextEntry
+                        while (entry != null && dexEntries.size < MAX_DEX_FILES) {
+                            if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
+                                val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                if (bytes == null) {
+                                    dexEntries.add(entry.name to ByteArray(0))
+                                } else {
+                                    dexEntries.add(entry.name to bytes)
+                                }
                             }
                             zip.closeEntry()
-                            e = zip.nextEntry
+                            entry = zip.nextEntry
                         }
                     }
                     if (dexEntries.isEmpty()) "No classes.dex file was found in the selected APK."
                     else buildString {
                         appendLine("DEX CLASS INSPECTOR REPORT")
                         appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
-                        appendLine("DEX files: ${dexEntries.size}")
+                        appendLine("DEX files examined: ${dexEntries.size} (maximum $MAX_DEX_FILES)")
                         dexEntries.forEach { (name, bytes) ->
                             appendLine("\n================ DEX: $name ================")
-                            try {
-                                val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
-                                appendLine("Class count: ${dex.classes.count()}")
-                                dex.classes.forEach { appendClass(it) }
-                                appendLine("\n============= DEX STRING POOL =============")
-                                dex.stringReferences.forEach { appendLine(it.string.replace("\n", "\\n").replace("\r", "\\r")) }
-                            } catch (ex: Exception) {
-                                appendLine("Could not parse $name: ${ex.message ?: ex.javaClass.simpleName}")
+                            if (bytes.isEmpty()) {
+                                appendLine("Skipped: this DEX exceeds the ${MAX_DEX_BYTES / (1024 * 1024)} MB safety limit.")
+                            } else {
+                                try {
+                                    val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                    val classes = dex.classes
+                                    appendLine("Class count: ${classes.count()}")
+                                    var emittedClasses = 0
+                                    for (clazz in classes) {
+                                        if (emittedClasses >= MAX_CLASSES_PER_DEX || length >= MAX_REPORT_CHARS) break
+                                        appendClass(clazz)
+                                        emittedClasses++
+                                    }
+                                    if (emittedClasses < classes.count()) {
+                                        appendLine("\n[Output limited: displayed $emittedClasses classes from this DEX.]")
+                                    }
+                                    if (length < MAX_REPORT_CHARS) {
+                                        appendLine("\n============= DEX STRING POOL (first $MAX_STRINGS) =============")
+                                        dex.stringReferences.take(MAX_STRINGS).forEach {
+                                            if (length < MAX_REPORT_CHARS) appendLine(it.string.replace("\n", "\\n").replace("\r", "\\r"))
+                                        }
+                                    }
+                                } catch (ex: Exception) {
+                                    appendLine("Could not parse $name: ${ex.message ?: ex.javaClass.simpleName}")
+                                }
                             }
                         }
-                        appendLine("\nNOTE: Instructions are disassembled DEX bytecode, not original Java source. Reconstructed Java source requires a decompiler and may be incomplete.")
+                        appendLine("\nNOTE: Output is intentionally limited for stability. Instructions are disassembled DEX bytecode, not original Java source.")
+                        if (length > MAX_REPORT_CHARS) setLength(MAX_REPORT_CHARS)
+                        if (length >= MAX_REPORT_CHARS) appendLine("\n[Report truncated to protect phone memory. Select a smaller APK or inspect fewer classes.]")
                     }
                 } ?: "Could not open selected file."
-            } catch (ex: Exception) { "Could not inspect file: ${ex.message ?: ex.javaClass.simpleName}" }
+            } catch (ex: Exception) {
+                "Could not inspect file: ${ex.message ?: ex.javaClass.simpleName}"
+            } catch (oom: OutOfMemoryError) {
+                "Inspection stopped because this APK needs more memory than the phone can provide. Try a smaller APK."
+            }
             runOnUiThread {
+                inspectionRunning = false
                 exportText = report
-                statusText.text = if (report.startsWith("Could not") || report.startsWith("No classes.dex")) "Inspection did not complete" else "Inspection complete"
+                statusText.text = if (report.startsWith("Could not") || report.startsWith("No classes.dex") || report.startsWith("Inspection stopped")) "Inspection did not complete" else "Inspection complete (output may be limited)"
                 resultText.text = report
             }
-        }.start()
+        }, "DexInspectorWorker").start()
+    }
+
+    /** Reads at most maxBytes + 1, preventing ZipInputStream.readBytes() from allocating without a bound. */
+    private fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray? {
+        val out = ByteArrayOutputStream(minOf(64 * 1024, maxBytes))
+        val buffer = ByteArray(16 * 1024)
+        var total = 0
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > maxBytes) return null
+            out.write(buffer, 0, count)
+        }
+        return out.toByteArray()
     }
 
     private fun StringBuilder.appendClass(c: ClassDef) {
+        if (length >= MAX_REPORT_CHARS) return
         appendLine("\n============================================================")
         appendLine("CLASS: ${type(c.type)}")
         appendLine("ACCESS: ${flags(c.accessFlags)} [${c.accessFlags}]")
@@ -141,11 +196,11 @@ class DexClassInspectorActivity : AppCompatActivity() {
         val fields = c.fields.toList()
         appendLine("\nFIELDS (${fields.size}):")
         if (fields.isEmpty()) appendLine("  <none>")
-        fields.forEach { appendField(it) }
+        fields.forEach { if (length < MAX_REPORT_CHARS) appendField(it) }
         val methods = c.methods.toList()
         appendLine("\nMETHODS / CONSTRUCTORS (${methods.size}):")
         if (methods.isEmpty()) appendLine("  <none>")
-        methods.forEach { appendMethod(it) }
+        methods.forEach { if (length < MAX_REPORT_CHARS) appendMethod(it) }
     }
 
     private fun StringBuilder.appendField(f: Field) {
@@ -172,14 +227,18 @@ class DexClassInspectorActivity : AppCompatActivity() {
         if (impl == null) appendLine("    BODY: <none — abstract/native or no code item>")
         else {
             appendLine("    REGISTERS: ${impl.registerCount}")
-            appendLine("    DEX INSTRUCTIONS:")
+            appendLine("    DEX INSTRUCTIONS (first $MAX_INSTRUCTIONS):")
             var address = 0
-            impl.instructions.forEach { ins ->
+            var emitted = 0
+            for (ins in impl.instructions) {
+                if (emitted >= MAX_INSTRUCTIONS || length >= MAX_REPORT_CHARS) break
                 appendLine("      %04x: %s".format(address, ins.toString()))
                 address += ins.codeUnits
+                emitted++
             }
-            impl.tryBlocks.forEach { appendLine("    TRY: start=${it.startCodeAddress}, units=${it.codeUnitCount}, handlers=${it.exceptionHandlers}") }
-            impl.debugItems.forEach { appendLine("    DEBUG: $it") }
+            if (emitted == MAX_INSTRUCTIONS) appendLine("      [Instructions truncated for memory safety]")
+            impl.tryBlocks.take(100).forEach { appendLine("    TRY: start=${it.startCodeAddress}, units=${it.codeUnitCount}, handlers=${it.exceptionHandlers}") }
+            impl.debugItems.take(200).forEach { appendLine("    DEBUG: $it") }
         }
     }
 
@@ -201,4 +260,14 @@ class DexClassInspectorActivity : AppCompatActivity() {
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val MAX_DEX_FILES = 5
+        private const val MAX_DEX_BYTES = 48 * 1024 * 1024
+        private const val MAX_CLASSES_PER_DEX = 120
+        private const val MAX_INSTRUCTIONS = 300
+        private const val MAX_STRINGS = 1000
+        private const val MAX_REPORT_CHARS = 1_500_000
+        private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
+    }
 }
