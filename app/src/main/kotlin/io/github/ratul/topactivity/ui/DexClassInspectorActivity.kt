@@ -1,7 +1,3 @@
-/*
- * DEX Class Inspector - reads DEX class descriptors from a user-selected APK.
- * File access is limited to the APK selected through Android's document picker.
- */
 package io.github.ratul.topactivity.ui
 
 import android.content.Intent
@@ -16,59 +12,48 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import org.jf.dexlib2.Opcodes
+import org.jf.dexlib2.dexbacked.DexBackedDexFile
+import org.jf.dexlib2.iface.ClassDef
+import org.jf.dexlib2.iface.Field
+import org.jf.dexlib2.iface.Method
 import java.io.BufferedInputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.zip.ZipInputStream
 
+/** APK DEX inspector: class metadata, fields, methods, annotations and disassembled instructions. */
 class DexClassInspectorActivity : AppCompatActivity() {
     private lateinit var resultText: TextView
     private lateinit var statusText: TextView
-    private var exportText: String = "No APK inspected yet."
-
-    private val apkPicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) inspectSelectedApk(uri)
+    private var exportText = "No APK inspected yet."
+    private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) inspect(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        buildScreen()
-    }
-
-    private fun buildScreen() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(8), dp(16), dp(16))
         }
-
-        val toolbar = MaterialToolbar(this).apply {
+        root.addView(MaterialToolbar(this).apply {
             title = "DEX Class Inspector"
             setNavigationIcon(android.R.drawable.ic_media_previous)
             setNavigationOnClickListener { finish() }
-        }
-        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(56)))
-
+        }, LinearLayout.LayoutParams(-1, dp(56)))
         root.addView(TextView(this).apply {
-            text = "Choose an APK file to inspect classes.dex, classes2.dex, and other DEX files. Inspection runs locally on this device."
+            text = "Inspect class hierarchy, fields, methods, constructors, annotations, DEX instructions and the DEX string pool. Processing is local."
             textSize = 15f
             setPadding(0, dp(12), 0, dp(12))
         })
-
         root.addView(Button(this).apply {
             text = "Select APK file"
-            setOnClickListener {
-                apkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
-            }
+            setOnClickListener { picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*")) }
         }, LinearLayout.LayoutParams(-1, -2))
-
         root.addView(Button(this).apply {
             text = "Export / Share report"
             setOnClickListener {
                 if (exportText == "No APK inspected yet.") {
-                    MaterialAlertDialogBuilder(this@DexClassInspectorActivity)
-                        .setMessage("Select an APK first.")
+                    MaterialAlertDialogBuilder(this@DexClassInspectorActivity).setMessage("Select an APK first.")
                         .setPositiveButton(android.R.string.ok, null).show()
                 } else {
                     val send = Intent(Intent.ACTION_SEND).apply {
@@ -80,17 +65,11 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 }
             }
         }, LinearLayout.LayoutParams(-1, -2))
-
-        statusText = TextView(this).apply {
-            text = "No APK selected"
-            textSize = 14f
-            setPadding(0, dp(12), 0, dp(8))
-        }
+        statusText = TextView(this).apply { text = "No APK selected"; textSize = 14f; setPadding(0, dp(12), 0, dp(8)) }
         root.addView(statusText)
-
         val scroll = ScrollView(this)
         resultText = TextView(this).apply {
-            textSize = 13f
+            textSize = 12f
             typeface = android.graphics.Typeface.MONOSPACE
             setTextIsSelectable(true)
             setPadding(dp(10), dp(10), dp(10), dp(10))
@@ -100,47 +79,44 @@ class DexClassInspectorActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    private fun inspectSelectedApk(uri: Uri) {
-        statusText.text = "Reading APK…"
+    private fun inspect(uri: Uri) {
+        statusText.text = "Reading APK and DEX contents…"
         resultText.text = ""
         Thread {
             val report = try {
                 contentResolver.openInputStream(uri)?.use { input ->
-                    val dexReports = mutableListOf<Pair<String, List<String>>>()
+                    val dexEntries = mutableListOf<Pair<String, ByteArray>>()
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
-                        var entry = zip.nextEntry
-                        while (entry != null) {
-                            if (!entry.isDirectory && entry.name.matches(Regex("(^|.*/)classes([0-9]+)?\\.dex"))) {
-                                val bytes = zip.readBytes()
-                                dexReports.add(entry.name to parseDexClasses(bytes))
+                        var e = zip.nextEntry
+                        while (e != null) {
+                            if (!e.isDirectory && Regex("(^|.*/)classes([0-9]+)?\\.dex").matches(e.name)) {
+                                dexEntries.add(e.name to zip.readBytes())
                             }
                             zip.closeEntry()
-                            entry = zip.nextEntry
+                            e = zip.nextEntry
                         }
                     }
-                    if (dexReports.isEmpty()) {
-                        "No classes.dex file was found in the selected APK."
-                    } else {
-                        buildString {
-                            appendLine("DEX CLASS INSPECTOR REPORT")
-                            appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
-                            appendLine("DEX files found: ${dexReports.size}")
-                            appendLine()
-                            dexReports.forEach { (name, classes) ->
-                                appendLine("=== $name ===")
-                                appendLine("Class count: ${classes.size}")
-                                appendLine()
-                                if (classes.isEmpty()) appendLine("No class descriptors could be read.")
-                                classes.forEach { appendLine(it) }
-                                appendLine()
+                    if (dexEntries.isEmpty()) "No classes.dex file was found in the selected APK."
+                    else buildString {
+                        appendLine("DEX CLASS INSPECTOR REPORT")
+                        appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
+                        appendLine("DEX files: ${dexEntries.size}")
+                        dexEntries.forEach { (name, bytes) ->
+                            appendLine("\n================ DEX: $name ================")
+                            try {
+                                val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                appendLine("Class count: ${dex.classes.count()}")
+                                dex.classes.forEach { appendClass(it) }
+                                appendLine("\n============= DEX STRING POOL =============")
+                                dex.stringReferences.forEach { appendLine(it.string.replace("\n", "\\n").replace("\r", "\\r")) }
+                            } catch (ex: Exception) {
+                                appendLine("Could not parse $name: ${ex.message ?: ex.javaClass.simpleName}")
                             }
-                            appendLine("Note: this report lists class descriptors only; it does not decompile method bodies or recover original source code.")
                         }
+                        appendLine("\nNOTE: Instructions are disassembled DEX bytecode, not original Java source. Reconstructed Java source requires a decompiler and may be incomplete.")
                     }
-                } ?: "Could not open the selected file."
-            } catch (e: Exception) {
-                "Could not inspect this file: ${e.message ?: e.javaClass.simpleName}"
-            }
+                } ?: "Could not open selected file."
+            } catch (ex: Exception) { "Could not inspect file: ${ex.message ?: ex.javaClass.simpleName}" }
             runOnUiThread {
                 exportText = report
                 statusText.text = if (report.startsWith("Could not") || report.startsWith("No classes.dex")) "Inspection did not complete" else "Inspection complete"
@@ -149,65 +125,80 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun parseDexClasses(data: ByteArray): List<String> {
-        if (data.size < 112 || !data.copyOfRange(0, 4).contentEquals(byteArrayOf(0x64, 0x65, 0x78, 0x0a))) {
-            return emptyList()
+    private fun StringBuilder.appendClass(c: ClassDef) {
+        appendLine("\n============================================================")
+        appendLine("CLASS: ${type(c.type)}")
+        appendLine("ACCESS: ${flags(c.accessFlags)} [${c.accessFlags}]")
+        appendLine("SUPERCLASS: ${c.superclass?.let { type(it) } ?: "<none>"}")
+        appendLine("INTERFACES: ${c.interfaces.joinToString { type(it) }.ifBlank { "<none>" }}")
+        appendLine("SOURCE FILE: ${c.sourceFile ?: "<not recorded>"}")
+        appendLine("CLASS ANNOTATIONS:")
+        if (c.annotations.isEmpty()) appendLine("  <none>")
+        c.annotations.forEach { a ->
+            appendLine("  @${type(a.type)} visibility=${a.visibility}")
+            a.elements.forEach { appendLine("    ${it.name} = ${it.value}") }
         }
-        val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-        val stringCount = buffer.getInt(56)
-        val stringOffset = buffer.getInt(60)
-        val typeCount = buffer.getInt(64)
-        val typeOffset = buffer.getInt(68)
-        val classCount = buffer.getInt(96)
-        val classOffset = buffer.getInt(100)
-        if (!validTable(stringOffset, stringCount, 4, data.size) ||
-            !validTable(typeOffset, typeCount, 4, data.size) ||
-            !validTable(classOffset, classCount, 32, data.size)) return emptyList()
+        val fields = c.fields.toList()
+        appendLine("\nFIELDS (${fields.size}):")
+        if (fields.isEmpty()) appendLine("  <none>")
+        fields.forEach { appendField(it) }
+        val methods = c.methods.toList()
+        appendLine("\nMETHODS / CONSTRUCTORS (${methods.size}):")
+        if (methods.isEmpty()) appendLine("  <none>")
+        methods.forEach { appendMethod(it) }
+    }
 
-        val strings = ArrayList<String>(stringCount)
-        for (i in 0 until stringCount) {
-            val offset = buffer.getInt(stringOffset + i * 4)
-            strings.add(readDexString(data, offset))
+    private fun StringBuilder.appendField(f: Field) {
+        appendLine("  ${flags(f.accessFlags)} ${type(f.type)} ${f.name}")
+        if (f.initialValue != null) appendLine("    Initial value: ${f.initialValue}")
+        f.annotations.forEach { a ->
+            appendLine("    @${type(a.type)}")
+            a.elements.forEach { appendLine("      ${it.name} = ${it.value}") }
         }
+    }
 
-        val typeDescriptors = IntArray(typeCount) { i -> buffer.getInt(typeOffset + i * 4) }
-        val result = ArrayList<String>(classCount)
-        for (i in 0 until classCount) {
-            val classIdx = buffer.getInt(classOffset + i * 32)
-            if (classIdx in typeDescriptors.indices) {
-                val descriptorIdx = typeDescriptors[classIdx]
-                val descriptor = strings.getOrNull(descriptorIdx)
-                if (descriptor != null) result.add(descriptorToName(descriptor))
+    private fun StringBuilder.appendMethod(m: Method) {
+        val label = if (m.name == "<init>" || m.name == "<clinit>") "CONSTRUCTOR" else "METHOD"
+        appendLine("\n  [$label] ${flags(m.accessFlags)} ${type(m.returnType)} ${m.name}(${m.parameterTypes.joinToString { type(it.toString()) }})")
+        m.parameters.forEachIndexed { i, p ->
+            appendLine("    PARAM #$i ${p.name ?: "<unnamed>"}: ${type(p.type)}")
+            p.annotations.forEach { appendLine("      @${type(it.type)}") }
+        }
+        m.annotations.forEach { a ->
+            appendLine("    @${type(a.type)}")
+            a.elements.forEach { appendLine("      ${it.name} = ${it.value}") }
+        }
+        val impl = m.implementation
+        if (impl == null) appendLine("    BODY: <none — abstract/native or no code item>")
+        else {
+            appendLine("    REGISTERS: ${impl.registerCount}")
+            appendLine("    DEX INSTRUCTIONS:")
+            var address = 0
+            impl.instructions.forEach { ins ->
+                appendLine("      %04x: %s".format(address, ins.toString()))
+                address += ins.codeUnits
             }
+            impl.tryBlocks.forEach { appendLine("    TRY: start=${it.startCodeAddress}, units=${it.codeUnitCount}, handlers=${it.exceptionHandlers}") }
+            impl.debugItems.forEach { appendLine("    DEBUG: $it") }
         }
-        return result
     }
 
-    private fun validTable(offset: Int, count: Int, itemSize: Int, size: Int): Boolean {
-        if (offset < 0 || count < 0) return false
-        return offset.toLong() + count.toLong() * itemSize <= size.toLong()
-    }
-
-    private fun readDexString(data: ByteArray, offset: Int): String {
-        if (offset !in data.indices) return "<invalid string offset>"
-        var index = offset
-        var shift = 0
-        while (index < data.size) {
-            val value = data[index++].toInt() and 0xff
-            if (value and 0x80 == 0) break
-            shift += 7
-            if (shift > 28) return "<invalid string length>"
+    private fun type(d: String): String {
+        if (d.startsWith("L") && d.endsWith(";")) return d.substring(1, d.length - 1).replace('/', '.')
+        if (d.startsWith("[")) return type(d.substring(1)) + "[]"
+        return when (d) {
+            "V" -> "void"; "Z" -> "boolean"; "B" -> "byte"; "S" -> "short"; "C" -> "char"
+            "I" -> "int"; "J" -> "long"; "F" -> "float"; "D" -> "double"; else -> d
         }
-        val start = index
-        while (index < data.size && data[index].toInt() != 0) index++
-        if (index >= data.size) return "<invalid string data>"
-        return String(data, start, index - start, Charsets.UTF_8)
     }
 
-    private fun descriptorToName(descriptor: String): String =
-        if (descriptor.startsWith("L") && descriptor.endsWith(";")) {
-            descriptor.substring(1, descriptor.length - 1).replace('/', '.')
-        } else descriptor
+    private fun flags(f: Int): String {
+        val names = listOf(1 to "public", 2 to "private", 4 to "protected", 8 to "static", 16 to "final",
+            32 to "synchronized", 64 to "volatile/bridge", 128 to "transient/varargs", 256 to "native",
+            512 to "interface", 1024 to "abstract", 2048 to "strict", 4096 to "synthetic",
+            8192 to "annotation", 16384 to "enum", 65536 to "constructor", 131072 to "declared-synchronized")
+        return names.filter { f and it.first != 0 }.joinToString(" ") { it.second }.ifBlank { "package-private" }
+    }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 }
