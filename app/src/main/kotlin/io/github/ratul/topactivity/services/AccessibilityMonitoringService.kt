@@ -33,6 +33,23 @@ class AccessibilityMonitoringService : AccessibilityService() {
         if (!DataRepository.appState.value.running) return
 
         val pkg = event.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            val node = runCatching { event.source }.getOrNull()
+            val widgetClass = node?.className?.toString() ?: event.className?.toString().orEmpty()
+            val viewId = node?.viewIdResourceName.orEmpty()
+            val label = node?.text?.toString()?.take(160)
+                ?.takeIf { it.isNotBlank() }
+                ?: node?.contentDescription?.toString()?.take(160)
+                ?: event.text.joinToString(" ").take(160)
+            val details = buildString {
+                append("View class: ").append(widgetClass.ifBlank { "Unknown" })
+                append("\nView ID: ").append(viewId.ifBlank { "(not exposed by this app)" })
+                append("\nText/label: ").append(label.ifBlank { "(none)" })
+            }
+            DataRepository.updateClickedElement(pkg, details)
+            return
+        }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val cls = event.className?.toString() ?: return
         val cacheKey = "$pkg/$cls"
 
