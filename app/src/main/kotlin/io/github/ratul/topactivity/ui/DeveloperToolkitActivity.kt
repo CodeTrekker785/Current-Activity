@@ -131,9 +131,22 @@ class DeveloperToolkitActivity : AppCompatActivity() {
         scroll.addView(list, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+
+        val apkPath = intent.getStringExtra(EXTRA_APK_PATH)
+        if (!apkPath.isNullOrBlank()) {
+            val apkFile = File(apkPath)
+            val targetClass = intent.getStringExtra(EXTRA_CLASS_NAME).orEmpty()
+            if (apkFile.isFile && apkFile.canRead()) {
+                search.setText(targetClass)
+                inspect(Uri.fromFile(apkFile), targetClass)
+            } else {
+                status.text = "Could not read the installed APK. Use Select APK to choose it manually."
+                toast("APK access unavailable. Select the APK manually.")
+            }
+        }
     }
 
-    private fun inspect(uri: Uri) {
+    private fun inspect(uri: Uri, targetClassName: String? = null) {
         if (inspectionRunning) return
         inspectionRunning = true
         status.text = "Reading APK, manifest metadata and DEX classes…"
@@ -239,8 +252,19 @@ class DeveloperToolkitActivity : AppCompatActivity() {
                     recordHistory("APK: $selectedApkName (${classes.size} classes)")
                     inspectionRunning = false
                     status.text = "$selectedApkName — ${classes.size} classes loaded"
-                    renderClasses("")
-                }
+                    val target = targetClassName?.takeIf { it.isNotBlank() }
+                    renderClasses(target ?: "")
+                    if (target != null) {
+                        val match = classes.firstOrNull { it.name == target }
+                        if (match != null) {
+                            search.setText(target)
+                            showClass(match)
+                        } else {
+                            search.setText(target)
+                            renderClasses(target)
+                            toast("The activity class was not found in the scanned DEX files. Search results are shown.")
+                        }
+                    }                }
             } else if (inspectionRunning) {
                 runOnUiThread {
                     inspectionRunning = false
@@ -442,6 +466,9 @@ class DeveloperToolkitActivity : AppCompatActivity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
+        const val EXTRA_APK_PATH = "developer_toolkit_apk_path"
+        const val EXTRA_PACKAGE_NAME = "developer_toolkit_package_name"
+        const val EXTRA_CLASS_NAME = "developer_toolkit_class_name"
         private const val KEY_BOOKMARKS = "bookmarks"
         private const val KEY_HISTORY = "history"
         private const val MAX_HISTORY = 100
