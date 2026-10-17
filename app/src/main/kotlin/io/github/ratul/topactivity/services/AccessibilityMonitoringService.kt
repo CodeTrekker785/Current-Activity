@@ -30,6 +30,9 @@ class AccessibilityMonitoringService : AccessibilityService() {
     private val activityCache = LruCache<String, Boolean>(500)
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        val eventPkg = event.packageName?.toString().orEmpty()
+        val eventType = AccessibilityEvent.eventTypeToString(event.eventType)
+        DataRepository.updateAccessibilityDiagnostic("Service connected; last event: $eventType; package: ${eventPkg.ifBlank { "(empty)" }}")
         if (!DataRepository.appState.value.running && event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
 
         val pkg = event.packageName?.toString() ?: return
@@ -68,10 +71,13 @@ class AccessibilityMonitoringService : AccessibilityService() {
         if (isActivity) DataRepository.updateData(pkg, cls)
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        DataRepository.updateAccessibilityDiagnostic("Accessibility service was interrupted by Android")
+    }
 
     override fun onServiceConnected() {
         instance = this
+        DataRepository.updateAccessibilityDiagnostic("Accessibility service connected; waiting for UI events")
         super.onServiceConnected()
     }
 
