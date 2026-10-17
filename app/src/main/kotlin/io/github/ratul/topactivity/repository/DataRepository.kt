@@ -29,6 +29,8 @@ data class ServiceState(
     val running: Boolean = false,
     val pkg: String = "",
     val cls: String = "",
+    val clickedElement: String = "",
+    val clickedPackage: String = "",
     val history: List<HistoryItem> = emptyList()
 )
 
@@ -62,6 +64,11 @@ object DataRepository {
                 history = historyDeque.toList()
             )
         }
+    }
+
+    fun updateClickedElement(pkg: String, details: String) {
+        if (pkg == BuildConfig.APPLICATION_ID || details.isBlank()) return
+        _appState.update { it.copy(clickedPackage = pkg, clickedElement = details) }
     }
 
     @Synchronized
