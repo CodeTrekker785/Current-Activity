@@ -168,9 +168,9 @@ class DexClassInspectorActivity : AppCompatActivity() {
         resultText.text = if (matches.isEmpty()) {
             "No lines matched: $term"
         } else {
-            "SEARCH RESULTS FOR: $term\\nMatches shown: ${matches.size}" +
+            "SEARCH RESULTS FOR: $term\nMatches shown: ${matches.size}" +
                 (if (matches.size == MAX_SEARCH_MATCHES) " (result limit reached)" else "") +
-                "\\n\\n" + matches.joinToString("\\n")
+                "\n\n" + matches.joinToString("\n")
         }
         statusText.text = "Search complete: ${matches.size} matching lines"
     }
