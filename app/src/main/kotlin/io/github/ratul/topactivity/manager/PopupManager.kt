@@ -107,7 +107,21 @@ class PopupManager(private val context: Context) {
             )
         }
         packageName.setOnClickListener(copyAction)
-        className.setOnClickListener(copyAction)
+        className.setOnClickListener {
+            val state = DataRepository.appState.value
+            try {
+                val appInfo = context.packageManager.getApplicationInfo(state.pkg, 0)
+                val intent = Intent(context, io.github.ratul.topactivity.ui.DeveloperToolkitActivity::class.java).apply {
+                    putExtra(io.github.ratul.topactivity.ui.DeveloperToolkitActivity.EXTRA_APK_PATH, appInfo.sourceDir)
+                    putExtra(io.github.ratul.topactivity.ui.DeveloperToolkitActivity.EXTRA_PACKAGE_NAME, state.pkg)
+                    putExtra(io.github.ratul.topactivity.ui.DeveloperToolkitActivity.EXTRA_CLASS_NAME, state.cls)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                App.copyString(context, className.value(), "Could not open the app APK. Class name copied instead.")
+            }
+        }
         packageName.setOnLongClickListener(copyLongPress)
         className.setOnLongClickListener(copyLongPress)
         view.setOnTouchListener(DragTouchManager(windowManager, layoutParams))
