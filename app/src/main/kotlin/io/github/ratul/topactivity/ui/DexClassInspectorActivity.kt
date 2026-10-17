@@ -77,6 +77,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 if (!inspectionRunning) picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
             }
         }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Open Developer Toolkit"
+            setOnClickListener {
+                startActivity(Intent(this@DexClassInspectorActivity, DeveloperToolkitActivity::class.java))
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
         loadMoreButton = Button(this).apply {
             text = "Load more classes (first $classLimitPerDex per DEX)"
             isEnabled = false
