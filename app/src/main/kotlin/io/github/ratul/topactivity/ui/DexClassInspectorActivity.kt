@@ -1,13 +1,17 @@
 package io.github.ratul.topactivity.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
@@ -29,6 +33,19 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private lateinit var resultText: TextView
     private lateinit var statusText: TextView
     private var exportText = "No APK inspected yet."
+    private var displayedReport = ""
+    private lateinit var searchInput: EditText
+
+    private val saveReportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(exportText) }
+                Toast.makeText(this, "Report saved.", Toast.LENGTH_SHORT).show()
+            } catch (ex: Exception) {
+                Toast.makeText(this, "Could not save report: ${ex.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     @Volatile private var inspectionRunning = false
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -73,6 +90,52 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 }
             }
         }, LinearLayout.LayoutParams(-1, -2))
+
+        searchInput = EditText(this).apply {
+            hint = "Search class, method, field, package…"
+            singleLine = true
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        root.addView(searchInput, LinearLayout.LayoutParams(-1, -2))
+        val searchButtons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        searchButtons.addView(Button(this).apply {
+            text = "Search"
+            setOnClickListener { filterReport(searchInput.text.toString()) }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        searchButtons.addView(Button(this).apply {
+            text = "Full report"
+            setOnClickListener {
+                resultText.text = exportText
+                statusText.text = "Showing full report"
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(searchButtons, LinearLayout.LayoutParams(-1, -2))
+        val reportButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        reportButtons.addView(Button(this).apply {
+            text = "Copy"
+            setOnClickListener {
+                if (exportText == "No APK inspected yet.") {
+                    Toast.makeText(this@DexClassInspectorActivity, "Inspect an APK first.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DEX report", exportText))
+                    Toast.makeText(this@DexClassInspectorActivity, "Full report copied.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        reportButtons.addView(Button(this).apply {
+            text = "Save TXT"
+            setOnClickListener {
+                if (exportText == "No APK inspected yet.") {
+                    Toast.makeText(this@DexClassInspectorActivity, "Inspect an APK first.", Toast.LENGTH_SHORT).show()
+                } else {
+                    saveReportPicker.launch("dex-report.txt")
+                }
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(reportButtons, LinearLayout.LayoutParams(-1, -2))
         statusText = TextView(this).apply { text = "No APK selected"; textSize = 14f; setPadding(0, dp(12), 0, dp(8)) }
         root.addView(statusText)
         val scroll = ScrollView(this)
@@ -85,6 +148,31 @@ class DexClassInspectorActivity : AppCompatActivity() {
         scroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+    }
+
+    private fun filterReport(query: String) {
+        val term = query.trim()
+        if (exportText == "No APK inspected yet.") {
+            Toast.makeText(this, "Inspect an APK first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (term.isEmpty()) {
+            resultText.text = exportText
+            statusText.text = "Showing full report"
+            return
+        }
+        val matches = exportText.lineSequence()
+            .filter { it.contains(term, ignoreCase = true) }
+            .take(MAX_SEARCH_MATCHES)
+            .toList()
+        resultText.text = if (matches.isEmpty()) {
+            "No lines matched: $term"
+        } else {
+            "SEARCH RESULTS FOR: $term\\nMatches shown: ${matches.size}" +
+                (if (matches.size == MAX_SEARCH_MATCHES) " (result limit reached)" else "") +
+                "\\n\\n" + matches.joinToString("\\n")
+        }
+        statusText.text = "Search complete: ${matches.size} matching lines"
     }
 
     private fun inspect(uri: Uri) {
@@ -158,6 +246,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             runOnUiThread {
                 inspectionRunning = false
                 exportText = report
+                displayedReport = report
                 statusText.text = if (report.startsWith("Could not") || report.startsWith("No classes.dex") || report.startsWith("Inspection stopped")) "Inspection did not complete" else "Inspection complete (output may be limited)"
                 resultText.text = report
             }
@@ -268,6 +357,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_INSTRUCTIONS = 300
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
+        private const val MAX_SEARCH_MATCHES = 5000
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
