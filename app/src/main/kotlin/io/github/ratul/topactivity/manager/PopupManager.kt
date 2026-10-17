@@ -132,7 +132,7 @@ class PopupManager(private val context: Context) {
         className.text = serviceState.cls
         packageName.text = serviceState.pkg
         appName.text = getAppName(serviceState.pkg) ?: defaultAppName
-        clickedElementInfo.text = serviceState.clickedElement.ifBlank { "Tap an item in the other app to inspect its view class and ID" }
+        clickedElementInfo.text = serviceState.clickedElement.ifBlank { serviceState.accessibilityDiagnostic }
 
         popupScope.launch {
             DataRepository.appState.collectLatest { state ->
@@ -143,7 +143,7 @@ class PopupManager(private val context: Context) {
 
                 val isPackageChanged = state.pkg != packageName.value()
                 val isClassChanged = state.cls != className.value()
-                if (state.clickedElement.isNotBlank()) clickedElementInfo.text = state.clickedElement
+                clickedElementInfo.text = state.clickedElement.ifBlank { state.accessibilityDiagnostic }
 
                 if (isClassChanged) {
                     className.text = state.cls
