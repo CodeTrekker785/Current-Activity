@@ -17,6 +17,7 @@
 package io.github.ratul.topactivity.manager
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -69,15 +70,20 @@ class PopupManager(private val context: Context) {
         val className = view.findViewById<TextView>(R.id.class_name)
         val closeBtn = view.findViewById<ImageView>(R.id.closeBtn)
         val historyBtn = view.findViewById<ImageView>(R.id.historyBtn)
+        val shareBtn = view.findViewById<TextView>(R.id.shareBtn)
 
-        val copyListener = View.OnLongClickListener { v ->
-            val textView = v as TextView
-            val message = when (v.id) {
+        val copyAction: (View) -> Unit = { target ->
+            val textView = target as TextView
+            val message = when (target.id) {
                 R.id.package_name -> context.getString(R.string.package_copied)
                 R.id.class_name -> context.getString(R.string.class_copied)
                 else -> context.getString(R.string.copied)
             }
             App.copyString(context, textView.value(), message)
+        }
+
+        val copyLongPress = View.OnLongClickListener { target ->
+            copyAction(target)
             true
         }
 
@@ -87,8 +93,23 @@ class PopupManager(private val context: Context) {
             historyManager = HistoryManager(context)
             historyManager?.show()
         }
-        packageName.setOnLongClickListener(copyListener)
-        className.setOnLongClickListener(copyListener)
+        shareBtn.setOnClickListener {
+            val state = DataRepository.appState.value
+            val details = "Current Activity\nApp: ${appName.text}\nPackage: ${state.pkg}\nClass: ${state.cls}"
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Current Activity details")
+                putExtra(Intent.EXTRA_TEXT, details)
+            }
+            context.startActivity(
+                Intent.createChooser(sendIntent, "Share current activity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+        packageName.setOnClickListener(copyAction)
+        className.setOnClickListener(copyAction)
+        packageName.setOnLongClickListener(copyLongPress)
+        className.setOnLongClickListener(copyLongPress)
         view.setOnTouchListener(DragTouchManager(windowManager, layoutParams))
 
         val serviceState = DataRepository.appState.value
