@@ -68,6 +68,7 @@ class PopupManager(private val context: Context) {
         val appName = view.findViewById<TextView>(R.id.app_name)
         val packageName = view.findViewById<TextView>(R.id.package_name)
         val className = view.findViewById<TextView>(R.id.class_name)
+        val clickedElementInfo = view.findViewById<TextView>(R.id.clicked_element_info)
         val closeBtn = view.findViewById<ImageView>(R.id.closeBtn)
         val historyBtn = view.findViewById<ImageView>(R.id.historyBtn)
         val shareBtn = view.findViewById<TextView>(R.id.shareBtn)
@@ -95,7 +96,7 @@ class PopupManager(private val context: Context) {
         }
         shareBtn.setOnClickListener {
             val state = DataRepository.appState.value
-            val details = "Current Activity\nApp: ${appName.text}\nPackage: ${state.pkg}\nClass: ${state.cls}"
+            val details = "Current Activity\nApp: ${appName.text}\nPackage: ${state.pkg}\nActivity class: ${state.cls}\nLast tapped element: ${state.clickedElement}"
             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_SUBJECT, "Current Activity details")
@@ -131,6 +132,7 @@ class PopupManager(private val context: Context) {
         className.text = serviceState.cls
         packageName.text = serviceState.pkg
         appName.text = getAppName(serviceState.pkg) ?: defaultAppName
+        clickedElementInfo.text = serviceState.clickedElement.ifBlank { "Tap an item in the other app to inspect its view class and ID" }
 
         popupScope.launch {
             DataRepository.appState.collectLatest { state ->
@@ -141,6 +143,7 @@ class PopupManager(private val context: Context) {
 
                 val isPackageChanged = state.pkg != packageName.value()
                 val isClassChanged = state.cls != className.value()
+                if (state.clickedElement.isNotBlank()) clickedElementInfo.text = state.clickedElement
 
                 if (isClassChanged) {
                     className.text = state.cls
