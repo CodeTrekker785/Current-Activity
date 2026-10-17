@@ -35,6 +35,9 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private var exportText = "No APK inspected yet."
     private var displayedReport = ""
     private lateinit var searchInput: EditText
+    private lateinit var loadMoreButton: Button
+    private var lastSelectedUri: Uri? = null
+    private var classLimitPerDex = INITIAL_CLASSES_PER_DEX
 
     private val saveReportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri != null) {
@@ -74,6 +77,20 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 if (!inspectionRunning) picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
             }
         }, LinearLayout.LayoutParams(-1, -2))
+        loadMoreButton = Button(this).apply {
+            text = "Load more classes (first $classLimitPerDex per DEX)"
+            isEnabled = false
+            setOnClickListener {
+                if (inspectionRunning) return@setOnClickListener
+                if (classLimitPerDex >= MAX_CLASSES_PER_DEX_HARD) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Maximum class limit reached. Try another APK or use a smaller DEX.", Toast.LENGTH_LONG).show()
+                } else {
+                    classLimitPerDex = minOf(classLimitPerDex + INITIAL_CLASSES_PER_DEX, MAX_CLASSES_PER_DEX_HARD)
+                    lastSelectedUri?.let { inspect(it) }
+                }
+            }
+        }
+        root.addView(loadMoreButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
             text = "Export / Share report"
             setOnClickListener {
@@ -178,7 +195,10 @@ class DexClassInspectorActivity : AppCompatActivity() {
 
     private fun inspect(uri: Uri) {
         if (inspectionRunning) return
+        lastSelectedUri = uri
         inspectionRunning = true
+        loadMoreButton.isEnabled = false
+        loadMoreButton.text = "Reading classes… (limit $classLimitPerDex per DEX)"
         statusText.text = "Reading APK and DEX contents…"
         resultText.text = ""
         Thread({
@@ -216,12 +236,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                     appendLine("Class count: ${classes.count()}")
                                     var emittedClasses = 0
                                     for (clazz in classes) {
-                                        if (emittedClasses >= MAX_CLASSES_PER_DEX || length >= MAX_REPORT_CHARS) break
+                                        if (emittedClasses >= classLimitPerDex || length >= MAX_REPORT_CHARS) break
                                         appendClass(clazz)
                                         emittedClasses++
                                     }
                                     if (emittedClasses < classes.count()) {
-                                        appendLine("\n[Output limited: displayed $emittedClasses classes from this DEX.]")
+                                        appendLine("\n[Output limited: displayed $emittedClasses classes from this DEX (current limit $classLimitPerDex).]")
                                     }
                                     if (length < MAX_REPORT_CHARS) {
                                         appendLine("\n============= DEX STRING POOL (first $MAX_STRINGS) =============")
@@ -246,6 +266,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
             runOnUiThread {
                 inspectionRunning = false
+                loadMoreButton.isEnabled = lastSelectedUri != null && classLimitPerDex < MAX_CLASSES_PER_DEX_HARD
+                loadMoreButton.text = if (classLimitPerDex >= MAX_CLASSES_PER_DEX_HARD) "Class limit reached ($classLimitPerDex per DEX)" else "Load more classes (up to $classLimitPerDex per DEX)"
                 exportText = report
                 displayedReport = report
                 statusText.text = if (report.startsWith("Could not") || report.startsWith("No classes.dex") || report.startsWith("Inspection stopped")) "Inspection did not complete" else "Inspection complete (output may be limited)"
@@ -354,7 +376,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
     companion object {
         private const val MAX_DEX_FILES = 5
         private const val MAX_DEX_BYTES = 48 * 1024 * 1024
-        private const val MAX_CLASSES_PER_DEX = 120
+        private const val INITIAL_CLASSES_PER_DEX = 120
+        private const val MAX_CLASSES_PER_DEX_HARD = 600
         private const val MAX_INSTRUCTIONS = 300
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
