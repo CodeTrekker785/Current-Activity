@@ -31,6 +31,7 @@ data class ServiceState(
     val cls: String = "",
     val clickedElement: String = "",
     val clickedPackage: String = "",
+    val accessibilityDiagnostic: String = "Accessibility service has not reported an event yet",
     val history: List<HistoryItem> = emptyList()
 )
 
@@ -64,6 +65,10 @@ object DataRepository {
                 history = historyDeque.toList()
             )
         }
+    }
+
+    fun updateAccessibilityDiagnostic(details: String) {
+        _appState.update { it.copy(accessibilityDiagnostic = details) }
     }
 
     fun updateClickedElement(pkg: String, details: String) {
