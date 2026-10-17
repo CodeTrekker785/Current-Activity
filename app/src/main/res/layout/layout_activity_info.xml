@@ -120,4 +120,36 @@
             android:textColor="#FFFFFF"
             android:textSize="12sp" />
     </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#60808080"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/PopupWindow.Body"
+            android:layout_width="80dp"
+            android:layout_height="match_parent"
+            android:layout_marginTop="1dp"
+            android:layout_marginEnd="1dp"
+            android:background="#60111111"
+            android:gravity="center"
+            android:padding="8dp"
+            android:text="Tapped"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/clicked_element_info"
+            style="@style/PopupWindow.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:background="#60111111"
+            android:padding="8dp"
+            android:text="Tap an item in the other app to inspect its view class and ID"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
 </LinearLayout>
