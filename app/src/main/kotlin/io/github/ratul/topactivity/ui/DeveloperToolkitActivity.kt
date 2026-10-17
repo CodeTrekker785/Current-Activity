@@ -110,6 +110,10 @@ class DeveloperToolkitActivity : AppCompatActivity() {
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(actions)
+        root.addView(Button(this).apply {
+            text = "Network / Server API Clues"
+            setOnClickListener { showNetworkClues() }
+        }, LinearLayout.LayoutParams(-1, -2))
         search = EditText(this).apply {
             hint = "Filter classes by name or package"
             maxLines = 1
@@ -356,6 +360,46 @@ class DeveloperToolkitActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showNetworkClues() {
+        val hints = linkedSetOf<String>()
+        classes.forEach { record ->
+            val className = record.name
+            if (NETWORK_CLASS_HINTS.any { className.contains(it, true) }) {
+                hints.add("Network-related class/library: $className")
+            }
+            record.methods.forEach { method ->
+                if (NETWORK_METHOD_HINTS.any { method.contains(it, true) }) {
+                    hints.add("Possible request/callback method in $className: $method")
+                }
+            }
+            record.fields.forEach { field ->
+                if (NETWORK_FIELD_HINTS.any { field.contains(it, true) }) {
+                    hints.add("Possible endpoint/config field in $className: $field")
+                }
+            }
+        }
+        val report = buildString {
+            appendLine("STATIC NETWORK / SERVER INDICATORS")
+            appendLine("These are clues, not proof that a specific tap contacted a server.")
+            appendLine("The server's private implementation is not contained in the APK.")
+            appendLine("HTTPS payloads are encrypted; runtime network tracing is needed to correlate requests with a tap.")
+            appendLine()
+            if (classes.isEmpty()) appendLine("Select an APK first.")
+            else if (hints.isEmpty()) appendLine("No obvious network/API indicators found in the scanned class names, methods or fields.")
+            else hints.take(MAX_NETWORK_CLUES).forEach { appendLine("• $it") }
+            if (hints.size > MAX_NETWORK_CLUES) appendLine("Showing first $MAX_NETWORK_CLUES indicators.")
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Network / Server API Clues")
+            .setMessage(report)
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Copy") { _, _ ->
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("Network API clues", report))
+                toast("Network/API clues copied.")
+            }.show()
+    }
+
     private fun showApkSummary() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("APK Analyzer")
@@ -466,6 +510,10 @@ class DeveloperToolkitActivity : AppCompatActivity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val MAX_NETWORK_CLUES = 250
+        private val NETWORK_CLASS_HINTS = listOf("okhttp", "retrofit", "volley", "ktor", "firebase", "graphql", "webview", "socket", "grpc", "httpurlconnection", "api.client", "network")
+        private val NETWORK_METHOD_HINTS = listOf("request", "execute", "enqueue", "connect", "fetch", "loadurl", "graphql", "websocket", "send", "getresponse", "post", "callapi")
+        private val NETWORK_FIELD_HINTS = listOf("base_url", "baseurl", "endpoint", "api_url", "server_url", "host", "token", "authorization")
         const val EXTRA_APK_PATH = "developer_toolkit_apk_path"
         const val EXTRA_PACKAGE_NAME = "developer_toolkit_package_name"
         const val EXTRA_CLASS_NAME = "developer_toolkit_class_name"
