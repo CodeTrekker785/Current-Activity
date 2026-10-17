@@ -30,7 +30,7 @@ class AccessibilityMonitoringService : AccessibilityService() {
     private val activityCache = LruCache<String, Boolean>(500)
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (!DataRepository.appState.value.running) return
+        if (!DataRepository.appState.value.running && event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
 
         val pkg = event.packageName?.toString() ?: return
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
@@ -42,14 +42,17 @@ class AccessibilityMonitoringService : AccessibilityService() {
                 ?: node?.contentDescription?.toString()?.take(160)
                 ?: event.text.joinToString(" ").take(160)
             val details = buildString {
-                append("View class: ").append(widgetClass.ifBlank { "Unknown" })
+                append("App package: ").append(pkg)
+                append("\nView class: ").append(widgetClass.ifBlank { "Unknown" })
                 append("\nView ID: ").append(viewId.ifBlank { "(not exposed by this app)" })
                 append("\nText/label: ").append(label.ifBlank { "(none)" })
+                append("\nEvent: ").append(AccessibilityEvent.eventTypeToString(event.eventType))
             }
             DataRepository.updateClickedElement(pkg, details)
             return
         }
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (!DataRepository.appState.value.running) return
         val cls = event.className?.toString() ?: return
         val cacheKey = "$pkg/$cls"
 
