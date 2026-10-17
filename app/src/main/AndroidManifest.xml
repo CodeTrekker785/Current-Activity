@@ -33,6 +33,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.DeveloperToolkitActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.ClipboardActivity"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
