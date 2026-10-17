@@ -93,7 +93,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
 
         searchInput = EditText(this).apply {
             hint = "Search class, method, field, package…"
-            singleLine = true
+            maxLines = 1
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
         root.addView(searchInput, LinearLayout.LayoutParams(-1, -2))
