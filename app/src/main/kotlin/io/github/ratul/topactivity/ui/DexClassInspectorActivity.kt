@@ -232,6 +232,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
                                         parsedCount++
                                         for (clazz in dex.classes) {
+                                            if (local.length >= MAX_REPORT_CHARS / 2) break
                                             val className = type(clazz.type)
                                             if (variants.any { className.contains(it, true) }) {
                                                 out.appendLine("\nCLASS DEFINITION: $className [$dexName]")
@@ -350,7 +351,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 contentResolver.openInputStream(uri)?.use { input ->
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
                         var entry = zip.nextEntry
-                        while (entry != null) {
+                        while (entry != null && output.length < MAX_REPORT_CHARS) {
                             if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
                                 dexCount++
                                 val dexName = entry.name
@@ -390,6 +391,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         local.appendLine("\n--- DEX STRING POOL matches ---")
                                         var stringMatches = 0
                                         for (ref in dex.stringReferences) {
+                                            if (local.length >= MAX_REPORT_CHARS / 2) break
                                             if (ref.string.contains(term, ignoreCase = true)) {
                                                 local.appendLine("STRING: " + ref.string.replace("\n", "\\n").replace("\r", "\\r"))
                                                 stringMatches++
@@ -398,7 +400,10 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         local.appendLine("Class/member matches: " + localMatches + "; string matches: " + stringMatches)
                                         totalMatches += localMatches + stringMatches
                                         if (localMatches + stringMatches == 0) local.appendLine("No matches in this DEX.")
-                                        synchronized(output) { output.append(local) }
+                                        synchronized(output) {
+                                            val remaining = MAX_REPORT_CHARS - output.length
+                                            if (remaining > 0) output.append(local, 0, minOf(local.length, remaining))
+                                        }
                                     } catch (ex: Exception) {
                                         skippedCount++
                                         output.appendLine("\nDEX: " + dexName)
@@ -423,6 +428,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             } catch (ex: Exception) {
                 output.appendLine("\nSEARCH INCOMPLETE: " + (ex.message ?: ex.javaClass.simpleName))
             }
+            if (output.length >= MAX_REPORT_CHARS) output.setLength(MAX_REPORT_CHARS)
             output.appendLine("\nSEARCH SUMMARY: DEX entries found=" + dexCount + "; parsed=" + parsedCount + "; skipped=" + skippedCount + ".")
             if (dexCount == 0) output.appendLine("No supported classes.dex through classes60.dex entries found.")
             if (skippedCount > 0) output.appendLine("WARNING: Search is incomplete because one or more DEX files were skipped.")
@@ -481,7 +487,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                         dexEntries.forEach { (name, bytes) ->
                             appendLine("\n================ DEX: $name ================")
                             if (bytes.isEmpty()) {
-                                appendLine("Skipped: this DEX exceeds the ${MAX_DEX_BYTES / (1024 * 1024)} MB safety limit.")
+                                appendLine("Skipped: this DEX exceeded the per-file or total memory safety limit.")
                             } else {
                                 try {
                                     val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
