@@ -710,6 +710,16 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                         out.appendLine("%04x  %s".format(address, line))
                                                         if (defText != null) out.appendLine("      $defText")
                                                         if (useNotes.isNotEmpty()) out.appendLine("      USE " + useNotes.joinToString("; "))
+                                                        // DEX requires move-result immediately after the producing call.
+                                                        // Surface that link so the result register isn't mistaken for an unrelated value.
+                                                        if (opcode.startsWith("MOVE_RESULT") && index > 0) {
+                                                            val producer = instructions[index - 1]
+                                                            val producerOpcode = producer.opcode.name
+                                                            if (producerOpcode.startsWith("INVOKE") || producerOpcode == "FILLED_NEW_ARRAY" || producerOpcode == "FILLED_NEW_ARRAY_RANGE") {
+                                                                val producerAddress = address - producer.codeUnits
+                                                                out.appendLine("      RESULT OF @%04x: %s".format(producerAddress, rendered[index - 1]))
+                                                            }
+                                                        }
                                                     }
                                                     if (destination != null) latestDefinition[destination] = index to line
                                                     address += instruction.codeUnits
