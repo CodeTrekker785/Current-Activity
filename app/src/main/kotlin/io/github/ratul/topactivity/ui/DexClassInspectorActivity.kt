@@ -232,7 +232,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
                                         parsedCount++
                                         for (clazz in dex.classes) {
-                                            if (local.length >= MAX_REPORT_CHARS / 2) break
+                                            if (out.length >= MAX_REPORT_CHARS / 2) break
                                             val className = type(clazz.type)
                                             if (variants.any { className.contains(it, true) }) {
                                                 out.appendLine("\nCLASS DEFINITION: $className [$dexName]")
@@ -710,12 +710,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
 
     companion object {
         private const val MAX_DEX_FILES = 60
-        private const val MAX_INSPECT_DEX_FILES = 8
+        private const val MAX_INSPECT_DEX_FILES = 100000
         private const val MAX_INSPECT_TOTAL_MB = 96
         private const val MAX_INSPECT_TOTAL_BYTES = MAX_INSPECT_TOTAL_MB * 1024 * 1024
         private const val MAX_DEX_BYTES = 48 * 1024 * 1024
         private const val INITIAL_CLASSES_PER_DEX = 120
-        private const val MAX_CLASSES_PER_DEX_HARD = 600
+        private const val MAX_CLASSES_PER_DEX_HARD = 100000
         private const val MAX_INSTRUCTIONS = 300
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
