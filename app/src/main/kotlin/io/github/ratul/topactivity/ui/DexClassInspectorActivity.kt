@@ -126,7 +126,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }
         searchButtons.addView(Button(this).apply {
             text = "Search"
-            setOnClickListener { filterReport(searchInput.text.toString()) }
+            setOnClickListener { val uri = lastSelectedUri; if (uri == null) filterReport(searchInput.text.toString()) else searchAllDex(uri, searchInput.text.toString()) }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         searchButtons.addView(Button(this).apply {
             text = "Full report"
@@ -199,6 +199,119 @@ class DexClassInspectorActivity : AppCompatActivity() {
         statusText.text = "Search complete: ${matches.size} matching lines"
     }
 
+    private fun searchAllDex(uri: Uri, query: String) {
+        val term = query.trim()
+        if (term.isEmpty()) { filterReport(""); return }
+        if (inspectionRunning) return
+        inspectionRunning = true
+        statusText.text = "Searching all DEX files for: " + term
+        resultText.text = "Search started…\nResults will appear as each DEX is scanned."
+        Thread({
+            val output = StringBuilder()
+            var dexCount = 0
+            var parsedCount = 0
+            var skippedCount = 0
+            var totalMatches = 0
+            var truncated = false
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(BufferedInputStream(input)).use { zip ->
+                        var entry = zip.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
+                                dexCount++
+                                val dexName = entry.name
+                                val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                if (bytes == null) {
+                                    skippedCount++
+                                    output.appendLine("\nDEX: " + dexName)
+                                    output.appendLine("SKIPPED: exceeds " + (MAX_DEX_BYTES / (1024 * 1024)) + " MB safety limit.")
+                                } else {
+                                    try {
+                                        val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                        parsedCount++
+                                        val local = StringBuilder()
+                                        local.appendLine("\n========== DEX: " + dexName + " ==========")
+                                        var localMatches = 0
+                                        for (clazz in dex.classes) {
+                                            val className = type(clazz.type)
+                                            val classHit = className.contains(term, ignoreCase = true)
+                                            val matchingFields = clazz.fields.filter { it.name.contains(term, true) || type(it.type).contains(term, true) }
+                                            val matchingMethods = clazz.methods.filter { method ->
+                                                method.name.contains(term, true) ||
+                                                type(method.returnType).contains(term, true) ||
+                                                method.parameterTypes.any { type(it.toString()).contains(term, true) }
+                                            }
+                                            if (classHit || matchingFields.isNotEmpty() || matchingMethods.isNotEmpty()) {
+                                                local.appendLine("\nCLASS: " + className)
+                                                local.appendLine("ACCESS: " + flags(clazz.accessFlags))
+                                                local.appendLine("SUPERCLASS: " + (clazz.superclass?.let { type(it) } ?: "<none>"))
+                                                if (classHit) local.appendLine("MATCH: class name")
+                                                matchingFields.forEach { local.appendLine("MATCH FIELD: " + type(it.type) + " " + it.name) }
+                                                matchingMethods.forEach { method ->
+                                                    local.appendLine("MATCH METHOD: " + type(method.returnType) + " " + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + ")")
+                                                }
+                                                localMatches++
+                                            }
+                                            if (totalMatches + localMatches >= MAX_SEARCH_MATCHES) { truncated = true; break }
+                                        }
+                                        local.appendLine("\n--- DEX STRING POOL matches ---")
+                                        var stringMatches = 0
+                                        for (ref in dex.stringReferences) {
+                                            if (ref.string.contains(term, ignoreCase = true)) {
+                                                local.appendLine("STRING: " + ref.string.replace("\n", "\\n").replace("\r", "\\r"))
+                                                stringMatches++
+                                                if (totalMatches + localMatches + stringMatches >= MAX_SEARCH_MATCHES) { truncated = true; break }
+                                            }
+                                        }
+                                        local.appendLine("Class/member matches: " + localMatches + "; string matches: " + stringMatches)
+                                        totalMatches += localMatches + stringMatches
+                                        if (localMatches + stringMatches == 0) local.appendLine("No matches in this DEX.")
+                                        synchronized(output) { output.append(local) }
+                                    } catch (ex: Exception) {
+                                        skippedCount++
+                                        output.appendLine("\nDEX: " + dexName)
+                                        output.appendLine("SKIPPED: parse failed (" + (ex.message ?: ex.javaClass.simpleName) + ").")
+                                    }
+                                }
+                                val snapshot = synchronized(output) { output.toString() }
+                                runOnUiThread {
+                                    if (inspectionRunning) {
+                                        resultText.text = snapshot.takeLast(MAX_LIVE_SEARCH_CHARS)
+                                        statusText.text = "Scanning " + dexName + " — " + parsedCount + " parsed, " + skippedCount + " skipped; " + totalMatches + " matches so far"
+                                    }
+                                }
+                                if (truncated) {
+                                    output.appendLine("\nSEARCH INCOMPLETE: result safety cap (" + MAX_SEARCH_MATCHES + ") reached.")
+                                    break
+                                }
+                            }
+                            zip.closeEntry()
+                            entry = zip.nextEntry
+                        }
+                    }
+                } ?: output.appendLine("Could not open selected APK.")
+            } catch (oom: OutOfMemoryError) {
+                output.appendLine("\nSEARCH INCOMPLETE: stopped to protect phone memory (out of memory). Try a smaller APK.")
+            } catch (ex: Exception) {
+                output.appendLine("\nSEARCH INCOMPLETE: " + (ex.message ?: ex.javaClass.simpleName))
+            }
+            output.appendLine("\nSEARCH SUMMARY: DEX entries found=" + dexCount + "; parsed=" + parsedCount + "; skipped=" + skippedCount + ".")
+            if (dexCount == 0) output.appendLine("No supported classes*.dex entries found.")
+            if (skippedCount > 0) output.appendLine("WARNING: Search is incomplete because one or more DEX files were skipped.")
+            if (truncated) output.appendLine("WARNING: Search stopped at the result cap; not all matches are shown.")
+            val finalText = synchronized(output) { output.toString().takeLast(MAX_LIVE_SEARCH_CHARS) }
+            runOnUiThread {
+                inspectionRunning = false
+                exportText = finalText
+                displayedReport = finalText
+                resultText.text = finalText
+                statusText.text = if (skippedCount > 0 || truncated) "Search finished — incomplete; see warnings" else "Search finished: " + totalMatches + " matches across " + parsedCount + " DEX files"
+                loadMoreButton.isEnabled = lastSelectedUri != null
+            }
+        }, "DexSearchWorker").start()
+    }
+
     private fun inspect(uri: Uri) {
         if (inspectionRunning) return
         lastSelectedUri = uri
@@ -213,7 +326,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                     val dexEntries = mutableListOf<Pair<String, ByteArray>>()
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
                         var entry = zip.nextEntry
-                        while (entry != null && dexEntries.size < MAX_DEX_FILES) {
+                        while (entry != null) {
                             if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
                                 val bytes = readBounded(zip, MAX_DEX_BYTES)
                                 if (bytes == null) {
@@ -388,6 +501,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
         private const val MAX_SEARCH_MATCHES = 5000
+        private const val MAX_LIVE_SEARCH_CHARS = 1_000_000
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
