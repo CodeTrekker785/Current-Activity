@@ -26,6 +26,14 @@ import org.jf.dexlib2.iface.ClassDef
 import org.jf.dexlib2.iface.Field
 import org.jf.dexlib2.iface.Method
 import org.jf.dexlib2.iface.instruction.ReferenceInstruction
+import org.jf.dexlib2.iface.instruction.OneRegisterInstruction
+import org.jf.dexlib2.iface.instruction.TwoRegisterInstruction
+import org.jf.dexlib2.iface.instruction.ThreeRegisterInstruction
+import org.jf.dexlib2.iface.instruction.FiveRegisterInstruction
+import org.jf.dexlib2.iface.instruction.RegisterRangeInstruction
+import org.jf.dexlib2.iface.instruction.NarrowLiteralInstruction
+import org.jf.dexlib2.iface.instruction.WideLiteralInstruction
+import org.jf.dexlib2.iface.instruction.OffsetInstruction
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
@@ -359,6 +367,45 @@ class DexClassInspectorActivity : AppCompatActivity() {
         statusText.text = "Search complete: ${matches.size} matching lines"
     }
 
+    /**
+     * Render dexlib instructions as readable Smali-like text. Instruction.toString()
+     * is not a disassembly API and can return a Java object identity string.
+     */
+    private fun renderInstruction(instruction: org.jf.dexlib2.iface.instruction.Instruction): String {
+        val operands = mutableListOf<String>()
+        when (instruction) {
+            is RegisterRangeInstruction -> {
+                val end = instruction.startRegister + instruction.registerCount - 1
+                operands += if (instruction.registerCount <= 0) "{}" else "{v${instruction.startRegister} .. v$end}"
+            }
+            is FiveRegisterInstruction -> {
+                operands += "v${instruction.registerC}"
+                operands += "v${instruction.registerD}"
+                operands += "v${instruction.registerE}"
+                operands += "v${instruction.registerF}"
+                operands += "v${instruction.registerG}"
+            }
+            is ThreeRegisterInstruction -> {
+                operands += "v${instruction.registerA}"
+                operands += "v${instruction.registerB}"
+                operands += "v${instruction.registerC}"
+            }
+            is TwoRegisterInstruction -> {
+                operands += "v${instruction.registerA}"
+                operands += "v${instruction.registerB}"
+            }
+            is OneRegisterInstruction -> operands += "v${instruction.registerA}"
+        }
+        when (instruction) {
+            is NarrowLiteralInstruction -> operands += instruction.narrowLiteral.toString()
+            is WideLiteralInstruction -> operands += instruction.wideLiteral.toString()
+        }
+        if (instruction is OffsetInstruction) operands += ":+${instruction.codeOffset}"
+        val reference = (instruction as? ReferenceInstruction)?.reference?.toString()
+        if (!reference.isNullOrBlank()) operands += reference
+        return instruction.opcode.name.lowercase() + if (operands.isEmpty()) "" else " " + operands.joinToString(", ")
+    }
+
     private fun searchAllDex(uri: Uri, query: String) {
         val term = query.trim()
         if (term.isEmpty()) { filterReport(""); return }
@@ -421,7 +468,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                 val implementation = method.implementation ?: continue
                                                 val methodSignature = className + "->" + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + ")"
                                                 for ((instructionIndex, instruction) in implementation.instructions.withIndex()) {
-                                                    val rendered = instruction.toString()
+                                                    val rendered = renderInstruction(instruction)
                                                     val reference = (instruction as? ReferenceInstruction)?.reference?.toString()
                                                     val matchesSearch = terms.any { candidate ->
                                                         rendered.contains(candidate, true) || (reference?.contains(candidate, true) == true)
