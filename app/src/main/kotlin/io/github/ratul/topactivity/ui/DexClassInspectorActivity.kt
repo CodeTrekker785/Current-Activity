@@ -658,17 +658,17 @@ class DexClassInspectorActivity : AppCompatActivity() {
         appendLine("SOURCE FILE: ${c.sourceFile ?: "<not recorded>"}")
         appendLine("CLASS ANNOTATIONS:")
         if (c.annotations.isEmpty()) appendLine("  <none>")
-        c.annotations.forEach { a ->
-            appendLine("  @${type(a.type)} visibility=${a.visibility}")
-            a.elements.forEach { appendLine("    ${it.name} = ${it.value}") }
+        c.annotations.take(30).forEach { a ->
+            if (length < MAX_REPORT_CHARS) appendLine("  @${type(a.type)} visibility=${a.visibility}")
+            a.elements.take(30).forEach { if (length < MAX_REPORT_CHARS) appendLine("    ${it.name} = ${it.value}") }
         }
-        val fields = c.fields.toList()
+        val fields = c.fields
         appendLine("\nFIELDS (${fields.size}):")
         if (fields.isEmpty()) appendLine("  <none>")
         fields.forEach { if (length < MAX_REPORT_CHARS) appendField(it) }
-        val methods = c.methods.toList()
-        appendLine("\nMETHODS / CONSTRUCTORS (${methods.size}):")
-        if (methods.isEmpty()) appendLine("  <none>")
+        if (length >= MAX_REPORT_CHARS) return
+        val methods = c.methods
+        appendLine("\nMETHODS / CONSTRUCTORS:")
         methods.forEach { if (length < MAX_REPORT_CHARS) appendMethod(it) }
     }
 
@@ -686,11 +686,11 @@ class DexClassInspectorActivity : AppCompatActivity() {
         appendLine("\n  [$label] ${flags(m.accessFlags)} ${type(m.returnType)} ${m.name}(${m.parameterTypes.joinToString { type(it.toString()) }})")
         m.parameters.forEachIndexed { i, p ->
             appendLine("    PARAM #$i ${p.name ?: "<unnamed>"}: ${type(p.type)}")
-            p.annotations.forEach { appendLine("      @${type(it.type)}") }
+            p.annotations.take(20).forEach { if (length < MAX_REPORT_CHARS) appendLine("      @${type(it.type)}") }
         }
-        m.annotations.forEach { a ->
-            appendLine("    @${type(a.type)}")
-            a.elements.forEach { appendLine("      ${it.name} = ${it.value}") }
+        m.annotations.take(20).forEach { a ->
+            if (length < MAX_REPORT_CHARS) appendLine("    @${type(a.type)}")
+            a.elements.take(30).forEach { if (length < MAX_REPORT_CHARS) appendLine("      ${it.name} = ${it.value}") }
         }
         val impl = m.implementation
         if (impl == null) appendLine("    BODY: <none — abstract/native or no code item>")
@@ -809,14 +809,14 @@ class DexClassInspectorActivity : AppCompatActivity() {
     companion object {
         private const val MAX_DEX_FILES = 60
         private const val MAX_INSPECT_DEX_FILES = 100000
-        private const val MAX_INSPECT_TOTAL_MB = 96
+        private const val MAX_INSPECT_TOTAL_MB = 32
         private const val MAX_INSPECT_TOTAL_BYTES = MAX_INSPECT_TOTAL_MB * 1024 * 1024
-        private const val MAX_DEX_BYTES = 48 * 1024 * 1024
+        private const val MAX_DEX_BYTES = 16 * 1024 * 1024
         private const val INITIAL_CLASSES_PER_DEX = 120
-        private const val MAX_CLASSES_PER_DEX_HARD = 100000
-        private const val MAX_INSTRUCTIONS = 300
-        private const val MAX_STRINGS = 1000
-        private const val MAX_REPORT_CHARS = 1_500_000
+        private const val MAX_CLASSES_PER_DEX_HARD = 1000
+        private const val MAX_INSTRUCTIONS = 60
+        private const val MAX_STRINGS = 200
+        private const val MAX_REPORT_CHARS = 300_000
         private const val MAX_REFERENCE_HITS = 5000
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
