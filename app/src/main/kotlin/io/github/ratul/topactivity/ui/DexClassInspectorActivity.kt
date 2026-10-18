@@ -389,15 +389,21 @@ class DexClassInspectorActivity : AppCompatActivity() {
         val operands = mutableListOf<String>()
         when (instruction) {
             is RegisterRangeInstruction -> {
-                val end = instruction.startRegister + instruction.registerCount - 1
-                operands += if (instruction.registerCount <= 0) "{}" else "{v${instruction.startRegister} .. v$end}"
+                val count = instruction.registerCount
+                val end = instruction.startRegister + count - 1
+                operands += if (count <= 0) "{}" else "{v${instruction.startRegister} .. v$end}"
             }
             is FiveRegisterInstruction -> {
-                operands += "v${instruction.registerC}"
-                operands += "v${instruction.registerD}"
-                operands += "v${instruction.registerE}"
-                operands += "v${instruction.registerF}"
-                operands += "v${instruction.registerG}"
+                // The encoded format has five register slots, but only registerCount
+                // of them are real arguments. Printing all slots invents false v0 uses.
+                val registers = listOf(
+                    instruction.registerC,
+                    instruction.registerD,
+                    instruction.registerE,
+                    instruction.registerF,
+                    instruction.registerG
+                ).take(instruction.registerCount.coerceIn(0, 5))
+                operands += registers.joinToString(prefix = "{", postfix = "}") { "v$it" }
             }
             is ThreeRegisterInstruction -> {
                 operands += "v${instruction.registerA}"
@@ -414,7 +420,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             is NarrowLiteralInstruction -> operands += instruction.narrowLiteral.toString()
             is WideLiteralInstruction -> operands += instruction.wideLiteral.toString()
         }
-        if (instruction is OffsetInstruction) operands += ":+${instruction.codeOffset}"
+        if (instruction is OffsetInstruction) operands += ":${if (instruction.codeOffset >= 0) "+" else ""}${instruction.codeOffset}"
         val reference = (instruction as? ReferenceInstruction)?.reference?.toString()
         if (!reference.isNullOrBlank()) operands += reference
         return instruction.opcode.name.lowercase() + if (operands.isEmpty()) "" else " " + operands.joinToString(", ")
@@ -911,7 +917,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             var emitted = 0
             for (ins in impl.instructions) {
                 if (emitted >= MAX_INSTRUCTIONS || length >= MAX_REPORT_CHARS) break
-                appendLine("      %04x: %s".format(address, ins.toString()))
+                appendLine("      %04x: %s".format(address, renderInstruction(ins)))
                 address += ins.codeUnits
                 emitted++
             }
