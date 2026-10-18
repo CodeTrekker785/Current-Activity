@@ -663,7 +663,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             a.elements.take(30).forEach { if (length < MAX_REPORT_CHARS) appendLine("    ${it.name} = ${it.value}") }
         }
         val fields = c.fields
-        appendLine("\nFIELDS (${fields.size}):")
+        appendLine("\nFIELDS:")
         if (fields.isEmpty()) appendLine("  <none>")
         fields.forEach { if (length < MAX_REPORT_CHARS) appendField(it) }
         if (length >= MAX_REPORT_CHARS) return
