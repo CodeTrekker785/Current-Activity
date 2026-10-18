@@ -8,9 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: current-activity-apk-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
+    name: Compile and package both APK variants
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -20,6 +26,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -27,11 +34,21 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build global debug APK
-        run: ./gradlew --no-daemon assembleGlobalDebug
+      - name: Compile global and Play Store debug APKs
+        run: ./gradlew --no-daemon --stacktrace assembleGlobalDebug assemblePlayStoreDebug
 
-      - name: Build Play Store debug APK
-        run: ./gradlew --no-daemon assemblePlayStoreDebug
+      - name: Verify APK outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          if [ "${#apks[@]}" -lt 2 ]; then
+            echo "Expected both Global and Play Store APK variants, found ${#apks[@]}."
+            printf '%s\n' "${apks[@]}"
+            exit 1
+          fi
+          printf 'APK outputs verified:\n'
+          du -h "${apks[@]}"
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
