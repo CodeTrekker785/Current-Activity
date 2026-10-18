@@ -297,7 +297,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
             if (hits == 0 && out.isEmpty()) out.appendLine("No matching class/member references found for: $normalized")
             out.appendLine("\nREFERENCE MAP SUMMARY: DEX files=$dexCount; parsed=$parsedCount; skipped=$skipped; instruction references=$hits.")
-            out.appendLine("How to use this for a controller (e.g. Premium): search one term at a time such as Premium, Renew, Billing, subscription, a displayed price, or a product ID. Follow METHOD CALL targets to handlers and FIELD READ/WRITE results to state variables. Inspect each enclosing class/method in the report.")\n            out.appendLine("Limitations: this is static reference tracing, not live execution or a guaranteed complete data-flow graph. Reflection, native code, dynamically loaded DEX, obfuscation, resource-only UI, and server-side decisions may not be resolved.")
+            out.appendLine("How to use this for a controller (e.g. Premium): search one term at a time such as Premium, Renew, Billing, subscription, a displayed price, or a product ID. Follow METHOD CALL targets to handlers and FIELD READ/WRITE results to state variables. Inspect each enclosing class/method in the report.")
+            out.appendLine("Limitations: this is static reference tracing, not live execution or a guaranteed complete data-flow graph. Reflection, native code, dynamically loaded DEX, obfuscation, resource-only UI, and server-side decisions may not be resolved.")
             val report = out.toString().take(MAX_REPORT_CHARS)
             runOnUiThread {
                 inspectionRunning = false
