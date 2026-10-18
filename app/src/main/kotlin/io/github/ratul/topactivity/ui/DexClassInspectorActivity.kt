@@ -620,7 +620,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                 val bytes = readBounded(zip, MAX_DEX_BYTES)
                                 if (bytes == null) {
                                     skipped++
-                                    out.appendLine("\\nDEX $dexName: skipped (over safety limit)")
+                                    out.appendLine("\nDEX $dexName: skipped (over safety limit)")
                                 } else {
                                     try {
                                         val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
@@ -634,13 +634,15 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                 val signature = className + "->" + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + "):" + type(method.returnType)
                                                 val instructions = impl.instructions.toList()
                                                 val rendered = instructions.map { renderInstruction(it) }
+                                                val hexValue = if (term.startsWith("0x", true)) term.substring(2).toLongOrNull(16) else null
+                                                val decimalAlias = hexValue?.toString()
                                                 val methodMatches = signature.contains(term, true) ||
-                                                    rendered.any { it.contains(term, true) } ||
+                                                    rendered.any { line -> line.contains(term, true) || (decimalAlias != null && line.contains(decimalAlias)) } ||
                                                     (registerQuery != null && rendered.any { it.contains("v" + registerQuery) })
                                                 if (!methodMatches) continue
 
                                                 matchedMethods++
-                                                out.appendLine("\\n========== REGISTER / VALUE FLOW: $dexName ==========")
+                                                out.appendLine("\n========== REGISTER / VALUE FLOW: $dexName ==========")
                                                 out.appendLine("METHOD: $signature")
                                                 out.appendLine("REGISTERS: " + impl.registerCount + "; instructions: " + instructions.size)
                                                 out.appendLine("Legend: DEF = likely destination register; USE = register's latest earlier visible definition.")
@@ -710,7 +712,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         }
                                     } catch (ex: Exception) {
                                         skipped++
-                                        out.appendLine("\\nDEX $dexName: parse failed (" + (ex.message ?: ex.javaClass.simpleName) + ")")
+                                        out.appendLine("\nDEX $dexName: parse failed (" + (ex.message ?: ex.javaClass.simpleName) + ")")
                                     }
                                 }
                             }
@@ -720,12 +722,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
                     }
                 } ?: out.appendLine("Could not open selected APK.")
             } catch (oom: OutOfMemoryError) {
-                out.appendLine("\\nFlow scan stopped to protect device memory.")
+                out.appendLine("\nFlow scan stopped to protect device memory.")
             } catch (ex: Exception) {
-                out.appendLine("\\nFlow scan incomplete: " + (ex.message ?: ex.javaClass.simpleName))
+                out.appendLine("\nFlow scan incomplete: " + (ex.message ?: ex.javaClass.simpleName))
             }
-            if (matchedMethods == 0) out.appendLine("\\nNo methods matched '$term'. Try a class/method name, a value such as 0x1, or a register such as v0.")
-            out.appendLine("\\nFLOW SUMMARY: DEX entries=" + dexCount + "; parsed=" + parsedCount + "; methods shown=" + matchedMethods + "; skipped=" + skipped + ".")
+            if (matchedMethods == 0) out.appendLine("\nNo methods matched '$term'. Try a class/method name, a value such as 0x1, or a register such as v0.")
+            out.appendLine("\nFLOW SUMMARY: DEX entries=" + dexCount + "; parsed=" + parsedCount + "; methods shown=" + matchedMethods + "; skipped=" + skipped + ".")
             out.appendLine("Limitations: flow is static and method-local. Branch merges, wide register pairs, exception paths, reflection, native code, and runtime/server decisions are not fully resolved. A constant such as 0x1 is not by itself proof of a premium or entitlement decision.")
             val report = out.toString().take(MAX_REPORT_CHARS)
             runOnUiThread {
