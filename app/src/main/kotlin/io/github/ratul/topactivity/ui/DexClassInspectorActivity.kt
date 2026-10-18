@@ -119,7 +119,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(-1, -2))
 
         searchInput = EditText(this).apply {
-            hint = "Search classes, methods, fields, types, and strings…"
+            hint = "Search any class, field, method, string, API, ID, or value…"
             maxLines = 1
             inputType = android.text.InputType.TYPE_CLASS_TEXT
             setPadding(dp(12), dp(8), dp(12), dp(8))
@@ -141,15 +141,18 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(searchButtons, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
-            text = "Find active plan / pricing controller"
+            text = "Universal DEX search (definitions + references)"
             setOnClickListener {
                 val uri = lastSelectedUri
                 if (uri == null) {
                     Toast.makeText(this@DexClassInspectorActivity, "Select an APK first.", Toast.LENGTH_SHORT).show()
                 } else if (!inspectionRunning) {
-                    val terms = "premium,subscription,plan,renew,billing,product,price,active,entitlement,expiry,monthly,quarterly,yearly"
-                    searchInput.setText(terms)
-                    searchAllDex(uri, terms)
+                    val terms = searchInput.text.toString().trim()
+                    if (terms.isBlank()) {
+                        Toast.makeText(this@DexClassInspectorActivity, "Enter any term, class, method, field, API, ID, or value to search.", Toast.LENGTH_LONG).show()
+                    } else {
+                        searchAllDex(uri, terms)
+                    }
                 }
             }
         }, LinearLayout.LayoutParams(-1, -2))
@@ -404,6 +407,18 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                     local.appendLine("MATCH METHOD: " + type(method.returnType) + " " + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + ")")
                                                 }
                                                 localMatches++
+                                            }
+                                            for (method in clazz.methods) {
+                                                val implementation = method.implementation ?: continue
+                                                for (instruction in implementation.instructions) {
+                                                    val reference = (instruction as? ReferenceInstruction)?.reference?.toString() ?: continue
+                                                    if (terms.any { reference.contains(it, ignoreCase = true) }) {
+                                                        local.appendLine("MATCH INSTRUCTION REFERENCE: " + className + "->" + method.name + " | " + instruction.opcode.name + " | " + reference)
+                                                        localMatches++
+                                                        if (local.length >= MAX_REPORT_CHARS / 2) break
+                                                    }
+                                                }
+                                                if (local.length >= MAX_REPORT_CHARS / 2) break
                                             }
                                         }
                                         local.appendLine("\n--- DEX STRING POOL matches ---")
