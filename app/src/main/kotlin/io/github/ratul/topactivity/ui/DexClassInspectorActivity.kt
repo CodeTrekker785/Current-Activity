@@ -21,6 +21,7 @@ import org.jf.dexlib2.dexbacked.DexBackedDexFile
 import org.jf.dexlib2.iface.ClassDef
 import org.jf.dexlib2.iface.Field
 import org.jf.dexlib2.iface.Method
+import org.jf.dexlib2.iface.instruction.ReferenceInstruction
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
@@ -136,6 +137,20 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(searchButtons, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Find callers / field references"
+            setOnClickListener {
+                val uri = lastSelectedUri
+                val term = searchInput.text.toString().trim()
+                if (uri == null) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Select an APK first.", Toast.LENGTH_SHORT).show()
+                } else if (term.isBlank()) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Enter a class, method, or field name first.", Toast.LENGTH_SHORT).show()
+                } else {
+                    findReferences(uri, term)
+                }
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
         val reportButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         reportButtons.addView(Button(this).apply {
             text = "Copy"
@@ -172,6 +187,106 @@ class DexClassInspectorActivity : AppCompatActivity() {
         scroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+    }
+
+    /**
+     * Static cross-reference search. Reports DEX instructions that reference the
+     * requested class/member and the enclosing class/method. This is not runtime
+     * tracing and cannot reveal server-side decisions or reflection-only links.
+     */
+    private fun findReferences(uri: Uri, query: String) {
+        if (inspectionRunning) return
+        inspectionRunning = true
+        statusText.text = "Building reference map for: $query"
+        resultText.text = "Scanning DEX instructions for class/member references…"
+        Thread({
+            val out = StringBuilder()
+            val normalized = query.trim()
+            val variants = setOf(
+                normalized,
+                normalized.replace('.', '/'),
+                "L" + normalized.replace('.', '/') + ";"
+            ).filter { it.isNotBlank() }
+            var dexCount = 0
+            var parsedCount = 0
+            var hits = 0
+            var skipped = 0
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(BufferedInputStream(input)).use { zip ->
+                        var entry = zip.nextEntry
+                        while (entry != null && out.length < MAX_REPORT_CHARS && hits < MAX_REFERENCE_HITS) {
+                            if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
+                                dexCount++
+                                val dexName = entry.name
+                                val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                if (bytes == null) {
+                                    skipped++
+                                    out.appendLine("\nDEX $dexName: skipped (over safety limit)")
+                                } else {
+                                    try {
+                                        val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                        parsedCount++
+                                        for (clazz in dex.classes) {
+                                            val className = type(clazz.type)
+                                            if (variants.any { className.contains(it, true) }) {
+                                                out.appendLine("\nCLASS DEFINITION: $className [$dexName]")
+                                                out.appendLine("  Superclass: ${clazz.superclass?.let { type(it) } ?: "<none>"}")
+                                                out.appendLine("  Fields: ${clazz.fields.joinToString { it.name }.ifBlank { "<none>" }}")
+                                                out.appendLine("  Methods: ${clazz.methods.joinToString { it.name + "()" }.ifBlank { "<none>" }}")
+                                            }
+                                            for (method in clazz.methods) {
+                                                val impl = method.implementation ?: continue
+                                                var address = 0
+                                                for (ins in impl.instructions) {
+                                                    if (out.length >= MAX_REPORT_CHARS || hits >= MAX_REFERENCE_HITS) break
+                                                    if (ins is ReferenceInstruction) {
+                                                        val refText = ins.reference.toString()
+                                                        if (variants.any { refText.contains(it, true) } ||
+                                                            (refText.contains(normalized, true))) {
+                                                            out.appendLine("\nREFERENCE #${hits + 1} [$dexName]")
+                                                            out.appendLine("  In class: $className")
+                                                            out.appendLine("  In method: ${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})")
+                                                            out.appendLine("  Offset: 0x${address.toString(16)}")
+                                                            out.appendLine("  Opcode: ${ins.opcode.name}")
+                                                            out.appendLine("  Target: $refText")
+                                                            hits++
+                                                        }
+                                                    }
+                                                    address += ins.codeUnits
+                                                }
+                                                if (hits >= MAX_REFERENCE_HITS) break
+                                            }
+                                            if (hits >= MAX_REFERENCE_HITS || out.length >= MAX_REPORT_CHARS) break
+                                        }
+                                    } catch (ex: Exception) {
+                                        skipped++
+                                        out.appendLine("\nDEX $dexName: parse failed (${ex.message ?: ex.javaClass.simpleName})")
+                                    }
+                                }
+                            }
+                            zip.closeEntry()
+                            entry = zip.nextEntry
+                        }
+                    }
+                } ?: out.appendLine("Could not open selected APK.")
+            } catch (oom: OutOfMemoryError) {
+                out.appendLine("\nSearch stopped to protect device memory.")
+            } catch (ex: Exception) {
+                out.appendLine("\nSearch incomplete: ${ex.message ?: ex.javaClass.simpleName}")
+            }
+            if (hits == 0 && out.isEmpty()) out.appendLine("No matching class/member references found for: $normalized")
+            out.appendLine("\nREFERENCE MAP SUMMARY: DEX files=$dexCount; parsed=$parsedCount; skipped=$skipped; instruction references=$hits.")
+            out.appendLine("Limitations: static DEX references only. Reflection, native code, dynamically loaded DEX, obfuscation, and server-side logic may not be resolved.")
+            val report = out.toString().take(MAX_REPORT_CHARS)
+            runOnUiThread {
+                inspectionRunning = false
+                exportText = report
+                displayedReport = report
+                resultText.text = report
+                statusText.text = "Reference map complete — $hits matches; $skipped DEX entries skipped"
+            }
+        }, "DexReferenceMapWorker").start()
     }
 
     private fun filterReport(query: String) {
@@ -490,6 +605,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_INSTRUCTIONS = 300
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
+        private const val MAX_REFERENCE_HITS = 5000
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
