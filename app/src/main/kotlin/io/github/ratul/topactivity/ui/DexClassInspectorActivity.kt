@@ -417,9 +417,46 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                     val matchesSearch = terms.any { candidate ->
                                                         rendered.contains(candidate, true) || (reference?.contains(candidate, true) == true)
                                                     }
-                                                    // Show all instructions for matching class/method, including register operands and constants.
-                                                    if (matchesSearch || matchingMethods.any { it.name == method.name && it.parameterTypes == method.parameterTypes } || classHit) {
-                                                        local.appendLine("INSN " + methodSignature + " @" + instructionIndex + ": " + rendered)
+                                                    val opcodeName = instruction.opcode.name
+                                                    val loadsOrProducesValue =
+                                                        opcodeName.startsWith("CONST") ||
+                                                        opcodeName.startsWith("MOVE") ||
+                                                        opcodeName.startsWith("MOVE_RESULT") ||
+                                                        opcodeName.startsWith("MOVE_EXCEPTION") ||
+                                                        opcodeName.contains("IGET") ||
+                                                        opcodeName.contains("SGET") ||
+                                                        opcodeName.contains("AGET") ||
+                                                        opcodeName.startsWith("NEW_") ||
+                                                        opcodeName.startsWith("FILLED_NEW_ARRAY") ||
+                                                        opcodeName.startsWith("INVOKE") ||
+                                                        opcodeName.startsWith("CHECK_CAST") ||
+                                                        opcodeName.startsWith("INSTANCE_OF") ||
+                                                        opcodeName.startsWith("ARRAY_LENGTH") ||
+                                                        opcodeName.startsWith("CMPL") ||
+                                                        opcodeName.startsWith("CMPG") ||
+                                                        opcodeName.startsWith("CMP_") ||
+                                                        opcodeName.startsWith("ADD_") ||
+                                                        opcodeName.startsWith("SUB_") ||
+                                                        opcodeName.startsWith("MUL_") ||
+                                                        opcodeName.startsWith("DIV_") ||
+                                                        opcodeName.startsWith("REM_") ||
+                                                        opcodeName.startsWith("AND_") ||
+                                                        opcodeName.startsWith("OR_") ||
+                                                        opcodeName.startsWith("XOR_") ||
+                                                        opcodeName.startsWith("SHL_") ||
+                                                        opcodeName.startsWith("SHR_") ||
+                                                        opcodeName.startsWith("USHR_") ||
+                                                        opcodeName.startsWith("NEG_") ||
+                                                        opcodeName.startsWith("NOT_") ||
+                                                        opcodeName.startsWith("INT_TO_") ||
+                                                        opcodeName.startsWith("LONG_TO_") ||
+                                                        opcodeName.startsWith("FLOAT_TO_") ||
+                                                        opcodeName.startsWith("DOUBLE_TO_")
+                                                    // Always report value loads/production in every scanned method, not only matches.
+                                                    if (loadsOrProducesValue || matchesSearch ||
+                                                        matchingMethods.any { it.name == method.name && it.parameterTypes == method.parameterTypes } ||
+                                                        classHit) {
+                                                        local.appendLine((if (loadsOrProducesValue) "VALUE/LOAD " else "INSN ") + methodSignature + " @" + instructionIndex + ": " + rendered)
                                                         if (reference != null) local.appendLine("  REFERENCE: " + reference)
                                                         localMatches++
                                                     }
