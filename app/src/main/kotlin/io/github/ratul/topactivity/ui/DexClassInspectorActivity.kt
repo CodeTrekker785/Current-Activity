@@ -66,7 +66,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
             setPadding(dp(16), dp(8), dp(16), dp(16))
         }
         root.addView(MaterialToolbar(this).apply {
-            tag = "dex_toolbar"
             title = "DEX Class Inspector"
             setNavigationIcon(android.R.drawable.ic_media_previous)
             setNavigationOnClickListener { finish() }
@@ -195,26 +194,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(reportButtons, LinearLayout.LayoutParams(-1, -2))
-        val pageMenu = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        fun addPage(label: String, page: String, description: String) {
-            pageMenu.addView(Button(this@DexClassInspectorActivity).apply {
-                text = "$label — $description"
-                setOnClickListener {
-                    val next = Intent(this@DexClassInspectorActivity, DexClassInspectorActivity::class.java)
-                        .putExtra(EXTRA_PAGE, page)
-                    lastSelectedUri?.let { next.data = it; next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-                    startActivity(next)
-                    finish()
-                }
-            }, LinearLayout.LayoutParams(-1, -2))
-        }
-        addPage("APK Inspector", PAGE_INSPECT, "Select APK and inspect")
-        addPage("Class Browser", PAGE_CLASSES, "Browse classes, fields and methods")
-        addPage("Universal Search", PAGE_SEARCH, "Search terms and inspect instructions")
-        addPage("Behavior Tracer", PAGE_TRACE, "Trace references and calls")
-        addPage("Reports", PAGE_REPORTS, "Copy, save and share reports")
-        addPage("Developer Toolkit", PAGE_TOOLKIT, "Open developer utilities")
-        root.addView(pageMenu, LinearLayout.LayoutParams(-1, -2))
         statusText = TextView(this).apply { text = "No APK selected"; textSize = 14f; setPadding(0, dp(12), 0, dp(8)) }
         root.addView(statusText)
         val scroll = ScrollView(this)
@@ -226,47 +205,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }
         scroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        val page = intent.getStringExtra(EXTRA_PAGE) ?: PAGE_HOME
-        lastSelectedUri = intent.data
-        val pageTitle = when (page) {
-            PAGE_INSPECT -> "APK Inspector"
-            PAGE_CLASSES -> "Class Browser"
-            PAGE_SEARCH -> "Universal DEX Search"
-            PAGE_TRACE -> "Behavior Tracer"
-            PAGE_REPORTS -> "Reports"
-            PAGE_TOOLKIT -> "Developer Toolkit"
-            else -> "DEX Inspector"
-        }
-        for (i in 0 until root.childCount) {
-            val child = root.getChildAt(i)
-            fun labels(view: android.view.View): String = when (view) {
-                is TextView -> view.text?.toString().orEmpty()
-                is ViewGroup -> (0 until view.childCount).joinToString(" ") { labels(view.getChildAt(it)) }
-                else -> ""
-            }
-            val text = labels(child)
-            val visible = when {
-                child is MaterialToolbar -> { child.title = pageTitle; true }
-                child === pageMenu -> page == PAGE_HOME
-                page == PAGE_HOME -> text.contains("Inspect class hierarchy") || text.contains("APK Inspector") ||
-                    text.contains("Class Browser") || text.contains("Universal Search") ||
-                    text.contains("Behavior Tracer") || text.contains("Reports") || text.contains("Developer Toolkit")
-                child === statusText || child is ScrollView -> page != PAGE_HOME
-                page == PAGE_INSPECT -> text.contains("Select APK file") || text.contains("Load more classes") || text.contains("Export / Share report")
-                page == PAGE_CLASSES -> text.contains("Select APK file") || text.contains("Load more classes") || text.contains("Full report")
-                page == PAGE_SEARCH -> text.contains("Search any class") || text.contains("Search") || text.contains("Universal DEX search")
-                page == PAGE_TRACE -> text.contains("Search any class") || text.contains("Trace behavior / controller")
-                page == PAGE_REPORTS -> text.contains("Export / Share report") || text.contains("Copy") || text.contains("Save TXT") || text.contains("Full report")
-                page == PAGE_TOOLKIT -> text.contains("Open Developer Toolkit")
-                else -> false
-            }
-            child.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
-        }
-        if (page == PAGE_TOOLKIT) {
-            startActivity(Intent(this, DeveloperToolkitActivity::class.java))
-            finish()
-            return
-        }
         polishScreen(root)
         setContentView(root)
     }
@@ -848,14 +786,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val EXTRA_PAGE = "dex_inspector_page"
-        private const val PAGE_HOME = "home"
-        private const val PAGE_INSPECT = "inspect"
-        private const val PAGE_CLASSES = "classes"
-        private const val PAGE_SEARCH = "search"
-        private const val PAGE_TRACE = "trace"
-        private const val PAGE_REPORTS = "reports"
-        private const val PAGE_TOOLKIT = "toolkit"
         private const val MAX_DEX_FILES = 60
         private const val MAX_INSPECT_DEX_FILES = 100000
         private const val MAX_INSPECT_TOTAL_MB = 96
