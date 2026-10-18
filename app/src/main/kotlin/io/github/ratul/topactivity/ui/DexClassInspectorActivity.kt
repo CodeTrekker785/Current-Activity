@@ -141,6 +141,19 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(searchButtons, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
+            text = "Find active plan / pricing controller"
+            setOnClickListener {
+                val uri = lastSelectedUri
+                if (uri == null) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Select an APK first.", Toast.LENGTH_SHORT).show()
+                } else if (!inspectionRunning) {
+                    val terms = "premium,subscription,plan,renew,billing,product,price,active,entitlement,expiry,monthly,quarterly,yearly"
+                    searchInput.setText(terms)
+                    searchAllDex(uri, terms)
+                }
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
             text = "Trace behavior / controller"
             setOnClickListener {
                 val uri = lastSelectedUri
@@ -337,9 +350,10 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private fun searchAllDex(uri: Uri, query: String) {
         val term = query.trim()
         if (term.isEmpty()) { filterReport(""); return }
+        val terms = term.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (inspectionRunning) return
         inspectionRunning = true
-        statusText.text = "Searching all DEX files for: " + term
+        statusText.text = "Searching all DEX files for: " + terms.joinToString(", ")
         resultText.text = "Search started…\nResults will appear as each DEX is scanned."
         Thread({
             val output = StringBuilder()
@@ -369,12 +383,16 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         var localMatches = 0
                                         for (clazz in dex.classes) {
                                             val className = type(clazz.type)
-                                            val classHit = className.contains(term, ignoreCase = true)
-                                            val matchingFields = clazz.fields.filter { it.name.contains(term, true) || type(it.type).contains(term, true) }
+                                            val classHit = terms.any { className.contains(it, ignoreCase = true) }
+                                            val matchingFields = clazz.fields.filter { field ->
+                                                terms.any { field.name.contains(it, true) || type(field.type).contains(it, true) }
+                                            }
                                             val matchingMethods = clazz.methods.filter { method ->
-                                                method.name.contains(term, true) ||
-                                                type(method.returnType).contains(term, true) ||
-                                                method.parameterTypes.any { type(it.toString()).contains(term, true) }
+                                                terms.any { candidate ->
+                                                    method.name.contains(candidate, true) ||
+                                                    type(method.returnType).contains(candidate, true) ||
+                                                    method.parameterTypes.any { type(it.toString()).contains(candidate, true) }
+                                                }
                                             }
                                             if (classHit || matchingFields.isNotEmpty() || matchingMethods.isNotEmpty()) {
                                                 local.appendLine("\nCLASS: " + className)
@@ -392,7 +410,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         var stringMatches = 0
                                         for (ref in dex.stringReferences) {
                                             if (local.length >= MAX_REPORT_CHARS / 2) break
-                                            if (ref.string.contains(term, ignoreCase = true)) {
+                                            if (terms.any { ref.string.contains(it, ignoreCase = true) }) {
                                                 local.appendLine("STRING: " + ref.string.replace("\n", "\\n").replace("\r", "\\r"))
                                                 stringMatches++
                                             }
@@ -430,7 +448,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
             if (output.length >= MAX_REPORT_CHARS) output.setLength(MAX_REPORT_CHARS)
             output.appendLine("\nSEARCH SUMMARY: DEX entries found=" + dexCount + "; parsed=" + parsedCount + "; skipped=" + skippedCount + ".")
-            if (dexCount == 0) output.appendLine("No supported classes.dex through classes60.dex entries found.")
+            if (dexCount == 0) output.appendLine("No supported DEX entries found.")
             if (skippedCount > 0) output.appendLine("WARNING: Search is incomplete because one or more DEX files were skipped.")
             val finalText = synchronized(output) { output.toString() }
             runOnUiThread {
