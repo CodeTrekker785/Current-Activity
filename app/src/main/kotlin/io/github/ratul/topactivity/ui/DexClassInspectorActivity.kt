@@ -138,7 +138,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(searchButtons, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
-            text = "Find callers / field references"
+            text = "Trace behavior / controller"
             setOnClickListener {
                 val uri = lastSelectedUri
                 val term = searchInput.text.toString().trim()
@@ -197,8 +197,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private fun findReferences(uri: Uri, query: String) {
         if (inspectionRunning) return
         inspectionRunning = true
-        statusText.text = "Building reference map for: $query"
-        resultText.text = "Scanning DEX instructions for class/member references…"
+        statusText.text = "Tracing class, method, field, string, and call references: $query"
+        resultText.text = "Tracing matching definitions, string constants, field accesses, and method calls…"
         Thread({
             val out = StringBuilder()
             val normalized = query.trim()
@@ -248,8 +248,24 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                             out.appendLine("  In class: $className")
                                                             out.appendLine("  In method: ${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})")
                                                             out.appendLine("  Offset: 0x${address.toString(16)}")
-                                                            out.appendLine("  Opcode: ${ins.opcode.name}")
+                                                            val opcode = ins.opcode.name
+                                                            val kind = when {
+                                                                opcode.startsWith("INVOKE") -> "METHOD CALL / DISPATCH"
+                                                                opcode.contains("IGET") || opcode.contains("SGET") -> "FIELD READ"
+                                                                opcode.contains("IPUT") || opcode.contains("SPUT") -> "FIELD WRITE"
+                                                                opcode.startsWith("CONST_STRING") -> "STRING CONSTANT"
+                                                                refText.startsWith("L") -> "CLASS / TYPE REFERENCE"
+                                                                refText.contains("->") && refText.contains(":") -> "FIELD / MEMBER REFERENCE"
+                                                                else -> "DEX REFERENCE"
+                                                            }
+                                                            out.appendLine("  Relationship: $kind")
+                                                            out.appendLine("  Opcode: $opcode")
                                                             out.appendLine("  Target: $refText")
+                                                            if (opcode.startsWith("INVOKE")) {
+                                                                out.appendLine("  Trace hint: inspect the target method next; this instruction is a possible call edge.")
+                                                            } else if (kind == "FIELD READ" || kind == "FIELD WRITE") {
+                                                                out.appendLine("  Trace hint: this instruction accesses the field; inspect its declaration and all other reads/writes.")
+                                                            }
                                                             hits++
                                                         }
                                                     }
@@ -277,7 +293,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
             if (hits == 0 && out.isEmpty()) out.appendLine("No matching class/member references found for: $normalized")
             out.appendLine("\nREFERENCE MAP SUMMARY: DEX files=$dexCount; parsed=$parsedCount; skipped=$skipped; instruction references=$hits.")
-            out.appendLine("Limitations: static DEX references only. Reflection, native code, dynamically loaded DEX, obfuscation, and server-side logic may not be resolved.")
+            out.appendLine("How to use this for a controller (e.g. Premium): search one term at a time such as Premium, Renew, Billing, subscription, a displayed price, or a product ID. Follow METHOD CALL targets to handlers and FIELD READ/WRITE results to state variables. Inspect each enclosing class/method in the report.")\n            out.appendLine("Limitations: this is static reference tracing, not live execution or a guaranteed complete data-flow graph. Reflection, native code, dynamically loaded DEX, obfuscation, resource-only UI, and server-side decisions may not be resolved.")
             val report = out.toString().take(MAX_REPORT_CHARS)
             runOnUiThread {
                 inspectionRunning = false
