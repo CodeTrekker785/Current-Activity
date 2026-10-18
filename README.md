@@ -50,6 +50,51 @@ Quickly inspect any active app on your device for development or debugging.
   <img src="./.resources/images/screenshot_5.jpg" width="160" height="356" alt="Screenshot 5">
 </div>
 
+## 🐧 Linux APK Scanner
+
+The Android app remains available for Android devices. For Linux desktops and servers, this repository also includes a command-line APK/DEX inspector.
+
+### Requirements
+
+- Linux (Ubuntu, Debian, Fedora, Arch, or another distribution)
+- Python 3.10 or newer
+- Internet access for the first dependency installation
+
+### Install and run
+
+From the repository root:
+
+\`\`\`bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r tools/linux/requirements.txt
+python tools/linux/apk_scanner.py /path/to/application.apk
+\`\`\`
+
+### Useful options
+
+\`\`\`bash
+# Search method signatures and instruction operands (case-insensitive)
+python tools/linux/apk_scanner.py app.apk --search "entitlement"
+
+# Inspect a particular method and print register/value-flow hints
+python tools/linux/apk_scanner.py app.apk --method "checkSubscription" --flow
+
+# Search for instructions such as const/4 and move-result
+python tools/linux/apk_scanner.py app.apk --search "const/4" --flow
+
+# Export machine-readable output
+python tools/linux/apk_scanner.py app.apk --search "move-result" --flow --json > report.json
+\`\`\`
+
+The Linux tool reads APK metadata, permissions, DEX classes, methods, and instruction operands. It can search instruction text (including constants and move-result instructions) and export JSON. The optional register/value-flow view is a **best-effort static heuristic**, not a full control-flow or runtime analysis. It does not execute or modify the APK.
+
+Run its local tests with:
+
+\`\`\`bash
+python -m unittest discover -s tools/linux -p 'test_*.py'
+\`\`\`
+
 ## 💡 FAQs
 
 ### Unable to enable Accessibility Service for Current Activity?
