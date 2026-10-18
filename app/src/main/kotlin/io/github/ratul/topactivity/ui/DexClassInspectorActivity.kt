@@ -343,7 +343,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                     else buildString {
                         appendLine("DEX CLASS INSPECTOR REPORT")
                         appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
-                        appendLine("DEX files examined: ${dexEntries.size} (maximum $MAX_DEX_FILES)")
+                        appendLine("DEX files discovered: ${dexEntries.size} (all supported entries scanned until safety limits apply)")
                         dexEntries.forEach { (name, bytes) ->
                             appendLine("\n================ DEX: $name ================")
                             if (bytes.isEmpty()) {
