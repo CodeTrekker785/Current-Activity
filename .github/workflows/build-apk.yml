@@ -21,6 +21,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Python for Linux scanner checks
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Linux scanner dependencies
+        run: python -m pip install -r tools/linux/requirements.txt
+
+      - name: Check Linux scanner syntax and tests
+        run: |
+          python -m compileall -q tools/linux
+          python -m unittest discover -s tools/linux -p 'test_*.py'
+          python tools/linux/apk_scanner.py --help
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
