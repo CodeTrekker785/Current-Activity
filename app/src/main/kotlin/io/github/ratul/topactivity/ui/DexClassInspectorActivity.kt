@@ -115,7 +115,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(-1, -2))
 
         searchInput = EditText(this).apply {
-            hint = "Search class, method, field, package…"
+            hint = "Search classes, methods, fields, types, and strings…"
             maxLines = 1
             inputType = android.text.InputType.TYPE_CLASS_TEXT
             setPadding(dp(12), dp(8), dp(12), dp(8))
@@ -187,13 +187,11 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }
         val matches = exportText.lineSequence()
             .filter { it.contains(term, ignoreCase = true) }
-            .take(MAX_SEARCH_MATCHES)
             .toList()
         resultText.text = if (matches.isEmpty()) {
             "No lines matched: $term"
         } else {
             "SEARCH RESULTS FOR: $term\nMatches shown: ${matches.size}" +
-                (if (matches.size == MAX_SEARCH_MATCHES) " (result limit reached)" else "") +
                 "\n\n" + matches.joinToString("\n")
         }
         statusText.text = "Search complete: ${matches.size} matching lines"
@@ -212,7 +210,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
             var parsedCount = 0
             var skippedCount = 0
             var totalMatches = 0
-            var truncated = false
             try {
                 contentResolver.openInputStream(uri)?.use { input ->
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
@@ -253,7 +250,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                 }
                                                 localMatches++
                                             }
-                                            if (totalMatches + localMatches >= MAX_SEARCH_MATCHES) { truncated = true; break }
                                         }
                                         local.appendLine("\n--- DEX STRING POOL matches ---")
                                         var stringMatches = 0
@@ -261,7 +257,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                             if (ref.string.contains(term, ignoreCase = true)) {
                                                 local.appendLine("STRING: " + ref.string.replace("\n", "\\n").replace("\r", "\\r"))
                                                 stringMatches++
-                                                if (totalMatches + localMatches + stringMatches >= MAX_SEARCH_MATCHES) { truncated = true; break }
                                             }
                                         }
                                         local.appendLine("Class/member matches: " + localMatches + "; string matches: " + stringMatches)
@@ -277,13 +272,9 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                 val snapshot = synchronized(output) { output.toString() }
                                 runOnUiThread {
                                     if (inspectionRunning) {
-                                        resultText.text = snapshot.takeLast(MAX_LIVE_SEARCH_CHARS)
+                                        resultText.text = snapshot
                                         statusText.text = "Scanning " + dexName + " — " + parsedCount + " parsed, " + skippedCount + " skipped; " + totalMatches + " matches so far"
                                     }
-                                }
-                                if (truncated) {
-                                    output.appendLine("\nSEARCH INCOMPLETE: result safety cap (" + MAX_SEARCH_MATCHES + ") reached.")
-                                    break
                                 }
                             }
                             zip.closeEntry()
@@ -299,14 +290,13 @@ class DexClassInspectorActivity : AppCompatActivity() {
             output.appendLine("\nSEARCH SUMMARY: DEX entries found=" + dexCount + "; parsed=" + parsedCount + "; skipped=" + skippedCount + ".")
             if (dexCount == 0) output.appendLine("No supported classes*.dex entries found.")
             if (skippedCount > 0) output.appendLine("WARNING: Search is incomplete because one or more DEX files were skipped.")
-            if (truncated) output.appendLine("WARNING: Search stopped at the result cap; not all matches are shown.")
-            val finalText = synchronized(output) { output.toString().takeLast(MAX_LIVE_SEARCH_CHARS) }
+            val finalText = synchronized(output) { output.toString() }
             runOnUiThread {
                 inspectionRunning = false
                 exportText = finalText
                 displayedReport = finalText
                 resultText.text = finalText
-                statusText.text = if (skippedCount > 0 || truncated) "Search finished — incomplete; see warnings" else "Search finished: " + totalMatches + " matches across " + parsedCount + " DEX files"
+                statusText.text = if (skippedCount > 0) "Search finished — incomplete; see warnings" else "Search finished: " + totalMatches + " matches across " + parsedCount + " DEX files"
                 loadMoreButton.isEnabled = lastSelectedUri != null
             }
         }, "DexSearchWorker").start()
@@ -500,8 +490,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_INSTRUCTIONS = 300
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
-        private const val MAX_SEARCH_MATCHES = 5000
-        private const val MAX_LIVE_SEARCH_CHARS = 1_000_000
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
