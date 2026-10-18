@@ -52,7 +52,9 @@ def scan_apk(apk_path: Path, search: str | None, method_filter: str | None,
         ) from exc
 
     apk, dex_objects, _analysis = AnalyzeAPK(str(apk_path))
-    if not isinstance(dex_objects, (list, tuple)):
+    if dex_objects is None:
+        dex_objects = []
+    elif not isinstance(dex_objects, (list, tuple)):
         dex_objects = [dex_objects]
 
     try:
