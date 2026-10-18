@@ -288,7 +288,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 output.appendLine("\nSEARCH INCOMPLETE: " + (ex.message ?: ex.javaClass.simpleName))
             }
             output.appendLine("\nSEARCH SUMMARY: DEX entries found=" + dexCount + "; parsed=" + parsedCount + "; skipped=" + skippedCount + ".")
-            if (dexCount == 0) output.appendLine("No supported classes*.dex entries found.")
+            if (dexCount == 0) output.appendLine("No supported classes.dex through classes60.dex entries found.")
             if (skippedCount > 0) output.appendLine("WARNING: Search is incomplete because one or more DEX files were skipped.")
             val finalText = synchronized(output) { output.toString() }
             runOnUiThread {
@@ -483,7 +483,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val MAX_DEX_FILES = 5
+        private const val MAX_DEX_FILES = 60
         private const val MAX_DEX_BYTES = 48 * 1024 * 1024
         private const val INITIAL_CLASSES_PER_DEX = 120
         private const val MAX_CLASSES_PER_DEX_HARD = 600
