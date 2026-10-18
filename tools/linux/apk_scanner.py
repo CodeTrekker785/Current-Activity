@@ -114,16 +114,13 @@ def scan_apk(apk_path: Path, search: str | None, method_filter: str | None,
                 "instruction": rendered,
             }
             result["instructions_scanned"] += 1
-            if needle and needle not in (signature + " " + rendered).casefold():
-                # Search results only; flow still tracks instructions before a match.
-                pass
-            else:
-                if needle or search is None:
-                    result["matches"].append(line)
-                    total += 1
-                    if total >= limit:
-                        result["truncated"] = True
-                        break
+            searchable = (signature + " " + rendered).casefold()
+            if needle is None or needle in searchable:
+                result["matches"].append(line)
+                total += 1
+                if total >= limit:
+                    result["truncated"] = True
+                    break
 
             if include_flow:
                 registers = REGISTER_RE.findall(rendered)
