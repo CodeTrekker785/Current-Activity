@@ -24,6 +24,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.github.ratul.topactivity.App
@@ -67,7 +68,17 @@ class HistoryManager(private val context: Context) {
         layoutParams.gravity = Gravity.CENTER
         layoutParams.width = viewSize
 
-        windowManager.addView(baseView, layoutParams)
+        try {
+            windowManager.addView(view, layoutParams)
+        } catch (e: SecurityException) {
+            baseView = null
+            Toast.makeText(context, "Floating window permission is unavailable.", Toast.LENGTH_LONG).show()
+            return
+        } catch (e: WindowManager.BadTokenException) {
+            baseView = null
+            Toast.makeText(context, "Android rejected the history window. Try again.", Toast.LENGTH_LONG).show()
+            return
+        }
 
         val closeBtn = view.findViewById<ImageView>(R.id.closeBtn)
         val clearBtn = view.findViewById<ImageView>(R.id.clearBtn)
@@ -103,8 +114,15 @@ class HistoryManager(private val context: Context) {
 
     private fun hide() {
         baseView?.let {
-            windowManager.removeView(it)
-            baseView = null
+            try {
+                if (it.isAttachedToWindow) windowManager.removeView(it)
+            } catch (_: IllegalArgumentException) {
+                // The window was already detached by the system.
+            } catch (_: WindowManager.BadTokenException) {
+                // The window token is no longer valid.
+            } finally {
+                baseView = null
+            }
         }
         popupScope.cancel()
     }
