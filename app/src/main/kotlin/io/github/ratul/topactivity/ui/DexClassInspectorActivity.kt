@@ -410,13 +410,20 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                             }
                                             for (method in clazz.methods) {
                                                 val implementation = method.implementation ?: continue
-                                                for (instruction in implementation.instructions) {
-                                                    val reference = (instruction as? ReferenceInstruction)?.reference?.toString() ?: continue
-                                                    if (terms.any { reference.contains(it, ignoreCase = true) }) {
-                                                        local.appendLine("MATCH INSTRUCTION REFERENCE: " + className + "->" + method.name + " | " + instruction.opcode.name + " | " + reference)
-                                                        localMatches++
-                                                        if (local.length >= MAX_REPORT_CHARS / 2) break
+                                                val methodSignature = className + "->" + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + ")"
+                                                for ((instructionIndex, instruction) in implementation.instructions.withIndex()) {
+                                                    val rendered = instruction.toString()
+                                                    val reference = (instruction as? ReferenceInstruction)?.reference?.toString()
+                                                    val matchesSearch = terms.any { candidate ->
+                                                        rendered.contains(candidate, true) || (reference?.contains(candidate, true) == true)
                                                     }
+                                                    // Show all instructions for matching class/method, including register operands and constants.
+                                                    if (matchesSearch || matchingMethods.any { it.name == method.name && it.parameterTypes == method.parameterTypes } || classHit) {
+                                                        local.appendLine("INSN " + methodSignature + " @" + instructionIndex + ": " + rendered)
+                                                        if (reference != null) local.appendLine("  REFERENCE: " + reference)
+                                                        localMatches++
+                                                    }
+                                                    if (local.length >= MAX_REPORT_CHARS / 2) break
                                                 }
                                                 if (local.length >= MAX_REPORT_CHARS / 2) break
                                             }
