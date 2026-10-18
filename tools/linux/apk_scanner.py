@@ -15,12 +15,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 REGISTER_RE = re.compile(r"\bv\d+\b|\bp\d+\b")
-VALUE_OP_PREFIXES = (
-    "const", "move", "sget", "iget", "aget", "new-", "check-cast",
-    "invoke-", "filled-new-array", "return",
-)
-
-
 def instruction_text(instruction: Any) -> str:
     """Normalize Androguard instruction output without depending on repr()."""
     try:
@@ -42,6 +36,13 @@ def iter_dex_methods(dex_objects: Iterable[Any]):
 
 def scan_apk(apk_path: Path, search: str | None, method_filter: str | None,
              limit: int, include_flow: bool) -> dict[str, Any]:
+    if not apk_path.is_file():
+        raise FileNotFoundError("APK file not found: " + str(apk_path))
+    if apk_path.suffix.lower() != ".apk":
+        raise ValueError("Input must be an .apk file")
+    if not zipfile.is_zipfile(apk_path):
+        raise ValueError("The input is not a valid ZIP/APK archive")
+
     try:
         from androguard.misc import AnalyzeAPK
     except ImportError as exc:
@@ -49,13 +50,6 @@ def scan_apk(apk_path: Path, search: str | None, method_filter: str | None,
             "Androguard is missing. Install it with: python3 -m pip install -r "
             "tools/linux/requirements.txt"
         ) from exc
-
-    if not apk_path.is_file():
-        raise FileNotFoundError("APK file not found: " + str(apk_path))
-    if apk_path.suffix.lower() != ".apk":
-        raise ValueError("Input must be an .apk file")
-    if not zipfile.is_zipfile(apk_path):
-        raise ValueError("The input is not a valid ZIP/APK archive")
 
     apk, dex_objects, _analysis = AnalyzeAPK(str(apk_path))
     if not isinstance(dex_objects, (list, tuple)):
@@ -101,7 +95,13 @@ def scan_apk(apk_path: Path, search: str | None, method_filter: str | None,
             continue
 
         last_defs: dict[str, str] = {}
-        for offset, ins in enumerate(instructions):
+        byte_offset = 0
+        for ins in instructions:
+            offset = byte_offset
+            try:
+                byte_offset += int(ins.get_length())
+            except Exception:
+                byte_offset += 1
             opcode = str(ins.get_name())
             rendered = instruction_text(ins)
             line = {
