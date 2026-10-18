@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -40,6 +41,9 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private var displayedReport = ""
     private lateinit var searchInput: EditText
     private lateinit var loadMoreButton: Button
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var reportScroll: ScrollView
+    private var showingReportPage = false
     private var lastSelectedUri: Uri? = null
     private var classLimitPerDex = INITIAL_CLASSES_PER_DEX
 
@@ -65,11 +69,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(8), dp(16), dp(16))
         }
-        root.addView(MaterialToolbar(this).apply {
+        toolbar = MaterialToolbar(this).apply {
             title = "DEX Class Inspector"
             setNavigationIcon(android.R.drawable.ic_media_previous)
-            setNavigationOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(-1, dp(56)))
+            setNavigationOnClickListener { if (showingReportPage) showReportPage(false) else finish() }
+        }
+        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(56)))
         root.addView(TextView(this).apply {
             text = "Inspect class hierarchy, fields, methods, constructors, annotations and DEX instructions. Large APK reports are limited to protect phone memory. Processing is local."
             textSize = 15f
@@ -194,17 +199,21 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(reportButtons, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Open report / results page"
+            setOnClickListener { showReportPage(true) }
+        }, LinearLayout.LayoutParams(-1, -2))
         statusText = TextView(this).apply { text = "No APK selected"; textSize = 14f; setPadding(0, dp(12), 0, dp(8)) }
         root.addView(statusText)
-        val scroll = ScrollView(this)
+        reportScroll = ScrollView(this)
         resultText = TextView(this).apply {
             textSize = 12f
             typeface = android.graphics.Typeface.MONOSPACE
             setTextIsSelectable(true)
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
-        scroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        reportScroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
+        root.addView(reportScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         polishScreen(root)
         setContentView(root)
     }
@@ -532,22 +541,50 @@ class DexClassInspectorActivity : AppCompatActivity() {
         Thread({
             val report = try {
                 contentResolver.openInputStream(uri)?.use { input ->
-                    val dexEntries = mutableListOf<Pair<String, ByteArray>>()
-                    var retainedDexBytes = 0L
-                    var omittedDexCount = 0
+                    val out = StringBuilder()
+                    var dexCount = 0
+                    var parsedCount = 0
+                    var skippedCount = 0
+                    out.appendLine("DEX CLASS INSPECTOR REPORT")
+                    out.appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
+                    out.appendLine("DEX processing: one file at a time to reduce peak memory.")
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
                         var entry = zip.nextEntry
-                        while (entry != null) {
+                        while (entry != null && out.length < MAX_REPORT_CHARS && dexCount < MAX_INSPECT_DEX_FILES) {
                             if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
-                                if (dexEntries.size >= MAX_INSPECT_DEX_FILES) {
-                                    omittedDexCount++
+                                dexCount++
+                                val name = entry.name
+                                val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                if (bytes == null) {
+                                    skippedCount++
+                                    out.appendLine("\\nDEX: $name — skipped (over $MAX_DEX_BYTES byte per-file safety limit)")
                                 } else {
-                                    val bytes = readBounded(zip, MAX_DEX_BYTES)
-                                    if (bytes == null || retainedDexBytes + bytes.size > MAX_INSPECT_TOTAL_BYTES) {
-                                        dexEntries.add(entry.name to ByteArray(0))
-                                    } else {
-                                        dexEntries.add(entry.name to bytes)
-                                        retainedDexBytes += bytes.size
+                                    try {
+                                        val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                        parsedCount++
+                                        out.appendLine("\\n================ DEX: $name ================")
+                                        val classes = dex.classes
+                                        out.appendLine("Class count: ${classes.size}")
+                                        var emitted = 0
+                                        for (clazz in classes) {
+                                            if (emitted >= classLimitPerDex || out.length >= MAX_REPORT_CHARS) break
+                                            out.appendClass(clazz)
+                                            emitted++
+                                        }
+                                        if (emitted < classes.size) out.appendLine("[Classes displayed: $emitted / ${classes.size}; current per-DEX limit: $classLimitPerDex]")
+                                        if (out.length < MAX_REPORT_CHARS) {
+                                            out.appendLine("\\n============= DEX STRING POOL (first $MAX_STRINGS) =============")
+                                            var stringCount = 0
+                                            for (ref in dex.stringReferences) {
+                                                if (stringCount++ >= MAX_STRINGS || out.length >= MAX_REPORT_CHARS) break
+                                                out.appendLine(ref.string.replace("\\n", "\\\\n").replace("\\r", "\\\\r"))
+                                            }
+                                        }
+                                    } catch (oom: OutOfMemoryError) {
+                                        throw oom
+                                    } catch (ex: Exception) {
+                                        skippedCount++
+                                        out.appendLine("Could not parse $name: ${ex.message ?: ex.javaClass.simpleName}")
                                     }
                                 }
                             }
@@ -555,50 +592,16 @@ class DexClassInspectorActivity : AppCompatActivity() {
                             entry = zip.nextEntry
                         }
                     }
-                    if (dexEntries.isEmpty()) "No classes.dex file was found in the selected APK."
-                    else buildString {
-                        appendLine("DEX CLASS INSPECTOR REPORT")
-                        appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
-                        appendLine("DEX files inspected: ${dexEntries.size}; omitted after safety limit: $omittedDexCount")
-                        appendLine("Memory guard: up to $MAX_INSPECT_DEX_FILES DEX files and $MAX_INSPECT_TOTAL_MB MB total DEX data retained per inspection.")
-                        dexEntries.forEach { (name, bytes) ->
-                            appendLine("\n================ DEX: $name ================")
-                            if (bytes.isEmpty()) {
-                                appendLine("Skipped: this DEX exceeded the per-file or total memory safety limit.")
-                            } else {
-                                try {
-                                    val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
-                                    val classes = dex.classes
-                                    appendLine("Class count: ${classes.count()}")
-                                    var emittedClasses = 0
-                                    for (clazz in classes) {
-                                        if (emittedClasses >= classLimitPerDex || length >= MAX_REPORT_CHARS) break
-                                        appendClass(clazz)
-                                        emittedClasses++
-                                    }
-                                    if (emittedClasses < classes.count()) {
-                                        appendLine("\n[Output limited: displayed $emittedClasses classes from this DEX (current limit $classLimitPerDex).]")
-                                    }
-                                    if (length < MAX_REPORT_CHARS) {
-                                        appendLine("\n============= DEX STRING POOL (first $MAX_STRINGS) =============")
-                                        dex.stringReferences.take(MAX_STRINGS).forEach {
-                                            if (length < MAX_REPORT_CHARS) appendLine(it.string.replace("\n", "\\n").replace("\r", "\\r"))
-                                        }
-                                    }
-                                } catch (ex: Exception) {
-                                    appendLine("Could not parse $name: ${ex.message ?: ex.javaClass.simpleName}")
-                                }
-                            }
-                        }
-                        appendLine("\nNOTE: Output is intentionally limited for stability. Instructions are disassembled DEX bytecode, not original Java source.")
-                        if (length > MAX_REPORT_CHARS) setLength(MAX_REPORT_CHARS)
-                        if (length >= MAX_REPORT_CHARS) appendLine("\n[Report truncated to protect phone memory. Select a smaller APK or inspect fewer classes.]")
-                    }
+                    if (dexCount == 0) out.appendLine("No supported DEX files found. Confirm the selected file is an APK or DEX file.")
+                    out.appendLine("\\nDEX entries found: $dexCount; parsed: $parsedCount; skipped/errors: $skippedCount")
+                    out.appendLine("NOTE: Output is bounded for device stability.")
+                    if (out.length > MAX_REPORT_CHARS) out.setLength(MAX_REPORT_CHARS)
+                    out.toString()
                 } ?: "Could not open selected file."
-            } catch (ex: Exception) {
-                "Could not inspect file: ${ex.message ?: ex.javaClass.simpleName}"
             } catch (oom: OutOfMemoryError) {
-                "Inspection stopped because this APK needs more memory than the phone can provide. Try a smaller APK."
+                "Inspection stopped to protect the phone from running out of memory. Try a smaller APK or lower the class limit."
+            } catch (ex: Exception) {
+                "Could not inspect APK: ${ex.message ?: ex.javaClass.simpleName}"
             }
             runOnUiThread {
                 inspectionRunning = false
@@ -606,10 +609,29 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 loadMoreButton.text = if (classLimitPerDex >= MAX_CLASSES_PER_DEX_HARD) "Class limit reached ($classLimitPerDex per DEX)" else "Load more classes (up to $classLimitPerDex per DEX)"
                 exportText = report
                 displayedReport = report
-                statusText.text = if (report.startsWith("Could not") || report.startsWith("No classes.dex") || report.startsWith("Inspection stopped")) "Inspection did not complete" else "Inspection complete (output may be limited)"
+                statusText.text = if (report.startsWith("Could not") || report.startsWith("No supported DEX") || report.startsWith("Inspection stopped")) "Inspection did not complete" else "Inspection complete (some output may be limited)"
                 resultText.text = report
             }
         }, "DexInspectorWorker").start()
+    }
+
+    private fun showReportPage(show: Boolean) {
+        showingReportPage = show
+        toolbar.title = if (show) "APK Report / Results" else "DEX Class Inspector"
+        for (i in 0 until (toolbar.parent as? ViewGroup)?.childCount.orEmpty()) { /* no-op; root visibility is handled below */ }
+        val root = toolbar.parent as? ViewGroup ?: return
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            if (child === toolbar) continue
+            val isReport = child === statusText || child === reportScroll
+            val isOpenReportButton = child is Button && child.text.toString() == "Open report / results page"
+            child.visibility = if (show) {
+                if (isReport) View.VISIBLE else View.GONE
+            } else {
+                if (isReport) View.GONE else View.VISIBLE
+            }
+            if (isOpenReportButton) child.visibility = if (show) View.GONE else View.VISIBLE
+        }
     }
 
     /** Reads at most maxBytes + 1, preventing ZipInputStream.readBytes() from allocating without a bound. */
