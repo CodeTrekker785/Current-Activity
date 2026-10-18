@@ -520,9 +520,9 @@ class DeveloperToolkitActivity : AppCompatActivity() {
         private const val KEY_BOOKMARKS = "bookmarks"
         private const val KEY_HISTORY = "history"
         private const val MAX_HISTORY = 100
-        private const val MAX_CLASSES_TOTAL = 3000
+        private const val MAX_CLASSES_TOTAL = 20000
         private const val MAX_VISIBLE_ROWS = 800
-        private const val MAX_DEX_FILES = 5
+        private const val MAX_DEX_FILES = 60
         private const val MAX_DEX_BYTES = 32 * 1024 * 1024
         private const val MAX_APK_COPY_BYTES = 100L * 1024 * 1024
         private const val MAX_MEMBERS_PER_CLASS = 300
