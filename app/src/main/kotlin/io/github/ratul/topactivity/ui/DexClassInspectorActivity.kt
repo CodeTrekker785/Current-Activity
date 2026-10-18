@@ -450,15 +450,22 @@ class DexClassInspectorActivity : AppCompatActivity() {
             val report = try {
                 contentResolver.openInputStream(uri)?.use { input ->
                     val dexEntries = mutableListOf<Pair<String, ByteArray>>()
+                    var retainedDexBytes = 0L
+                    var omittedDexCount = 0
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
                         var entry = zip.nextEntry
                         while (entry != null) {
                             if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
-                                val bytes = readBounded(zip, MAX_DEX_BYTES)
-                                if (bytes == null) {
-                                    dexEntries.add(entry.name to ByteArray(0))
+                                if (dexEntries.size >= MAX_INSPECT_DEX_FILES) {
+                                    omittedDexCount++
                                 } else {
-                                    dexEntries.add(entry.name to bytes)
+                                    val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                    if (bytes == null || retainedDexBytes + bytes.size > MAX_INSPECT_TOTAL_BYTES) {
+                                        dexEntries.add(entry.name to ByteArray(0))
+                                    } else {
+                                        dexEntries.add(entry.name to bytes)
+                                        retainedDexBytes += bytes.size
+                                    }
                                 }
                             }
                             zip.closeEntry()
@@ -469,7 +476,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
                     else buildString {
                         appendLine("DEX CLASS INSPECTOR REPORT")
                         appendLine("APK: ${uri.lastPathSegment ?: "Selected APK"}")
-                        appendLine("DEX files discovered: ${dexEntries.size} (all supported entries scanned until safety limits apply)")
+                        appendLine("DEX files inspected: ${dexEntries.size}; omitted after safety limit: $omittedDexCount")
+                        appendLine("Memory guard: up to $MAX_INSPECT_DEX_FILES DEX files and $MAX_INSPECT_TOTAL_MB MB total DEX data retained per inspection.")
                         dexEntries.forEach { (name, bytes) ->
                             appendLine("\n================ DEX: $name ================")
                             if (bytes.isEmpty()) {
@@ -696,6 +704,9 @@ class DexClassInspectorActivity : AppCompatActivity() {
 
     companion object {
         private const val MAX_DEX_FILES = 60
+        private const val MAX_INSPECT_DEX_FILES = 8
+        private const val MAX_INSPECT_TOTAL_MB = 96
+        private const val MAX_INSPECT_TOTAL_BYTES = MAX_INSPECT_TOTAL_MB * 1024 * 1024
         private const val MAX_DEX_BYTES = 48 * 1024 * 1024
         private const val INITIAL_CLASSES_PER_DEX = 120
         private const val MAX_CLASSES_PER_DEX_HARD = 600
