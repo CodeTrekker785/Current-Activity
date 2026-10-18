@@ -618,7 +618,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
     private fun showReportPage(show: Boolean) {
         showingReportPage = show
         toolbar.title = if (show) "APK Report / Results" else "DEX Class Inspector"
-        for (i in 0 until (toolbar.parent as? ViewGroup)?.childCount.orEmpty()) { /* no-op; root visibility is handled below */ }
         val root = toolbar.parent as? ViewGroup ?: return
         for (i in 0 until root.childCount) {
             val child = root.getChildAt(i)
