@@ -631,18 +631,18 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                             for (method in clazz.methods) {
                                                 if (out.length >= MAX_REPORT_CHARS || matchedMethods >= MAX_VALUE_FLOW_METHODS) break
                                                 val impl = method.implementation ?: continue
-                                                val signature = "$" + "{className}->" + "$" + "{method.name}(" + "$" + "{method.parameterTypes.joinToString { type(it.toString()) }}):" + "$" + "{type(method.returnType)}"
+                                                val signature = className + "->" + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + "):" + type(method.returnType)
                                                 val instructions = impl.instructions.toList()
                                                 val rendered = instructions.map { renderInstruction(it) }
                                                 val methodMatches = signature.contains(term, true) ||
                                                     rendered.any { it.contains(term, true) } ||
-                                                    (registerQuery != null && rendered.any { it.contains("v$" + "registerQuery") })
+                                                    (registerQuery != null && rendered.any { it.contains("v" + registerQuery) })
                                                 if (!methodMatches) continue
 
                                                 matchedMethods++
                                                 out.appendLine("\\n========== REGISTER / VALUE FLOW: $dexName ==========")
                                                 out.appendLine("METHOD: $signature")
-                                                out.appendLine("REGISTERS: " + "$" + "{impl.registerCount}; instructions: " + "$" + "{instructions.size}")
+                                                out.appendLine("REGISTERS: " + impl.registerCount + "; instructions: " + instructions.size)
                                                 out.appendLine("Legend: DEF = likely destination register; USE = register's latest earlier visible definition.")
                                                 val latestDefinition = mutableMapOf<Int, Pair<Int, String>>()
                                                 var address = 0
@@ -690,7 +690,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                         .mapNotNull { it.groupValues[1].toIntOrNull() }.distinct().toList()
                                                     val sourceRegs = if (destination != null && regs.firstOrNull() == destination) regs.drop(1) else regs
                                                     val useNotes = sourceRegs.mapNotNull { reg ->
-                                                        latestDefinition[reg]?.let { (defIndex, defText) -> "v$" + "{reg} from @$" + "{defIndex} ($" + "{defText})" }
+                                                        latestDefinition[reg]?.let { (defIndex, defText) -> "v" + reg + " from @" + defIndex + " (" + defText + ")" }
                                                     }
                                                     val isRelevantRegister = registerQuery == null ||
                                                         destination == registerQuery || sourceRegs.contains(registerQuery)
@@ -710,7 +710,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         }
                                     } catch (ex: Exception) {
                                         skipped++
-                                        out.appendLine("\\nDEX $dexName: parse failed (" + "$" + "{ex.message ?: ex.javaClass.simpleName})")
+                                        out.appendLine("\\nDEX $dexName: parse failed (" + (ex.message ?: ex.javaClass.simpleName) + ")")
                                     }
                                 }
                             }
@@ -722,10 +722,10 @@ class DexClassInspectorActivity : AppCompatActivity() {
             } catch (oom: OutOfMemoryError) {
                 out.appendLine("\\nFlow scan stopped to protect device memory.")
             } catch (ex: Exception) {
-                out.appendLine("\\nFlow scan incomplete: " + "$" + "{ex.message ?: ex.javaClass.simpleName}")
+                out.appendLine("\\nFlow scan incomplete: " + (ex.message ?: ex.javaClass.simpleName))
             }
             if (matchedMethods == 0) out.appendLine("\\nNo methods matched '$term'. Try a class/method name, a value such as 0x1, or a register such as v0.")
-            out.appendLine("\\nFLOW SUMMARY: DEX entries=$" + "{dexCount}; parsed=$" + "{parsedCount}; methods shown=$" + "{matchedMethods}; skipped=$" + "{skipped}.")
+            out.appendLine("\\nFLOW SUMMARY: DEX entries=" + dexCount + "; parsed=" + parsedCount + "; methods shown=" + matchedMethods + "; skipped=" + skipped + ".")
             out.appendLine("Limitations: flow is static and method-local. Branch merges, wide register pairs, exception paths, reflection, native code, and runtime/server decisions are not fully resolved. A constant such as 0x1 is not by itself proof of a premium or entitlement decision.")
             val report = out.toString().take(MAX_REPORT_CHARS)
             runOnUiThread {
@@ -733,7 +733,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 exportText = report
                 displayedReport = report
                 resultText.text = report
-                statusText.text = "Value flow complete — $" + "{matchedMethods} methods; $" + "{skipped} skipped"
+                statusText.text = "Value flow complete — " + matchedMethods + " methods; " + skipped + " skipped"
                 loadMoreButton.isEnabled = lastSelectedUri != null
             }
         }, "DexValueFlowWorker").start()
