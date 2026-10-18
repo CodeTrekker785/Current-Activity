@@ -664,7 +664,6 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }
         val fields = c.fields
         appendLine("\nFIELDS:")
-        if (fields.isEmpty()) appendLine("  <none>")
         fields.forEach { if (length < MAX_REPORT_CHARS) appendField(it) }
         if (length >= MAX_REPORT_CHARS) return
         val methods = c.methods
