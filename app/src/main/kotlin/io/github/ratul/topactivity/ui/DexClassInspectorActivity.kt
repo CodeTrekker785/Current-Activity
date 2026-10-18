@@ -183,6 +183,20 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 }
             }
         }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Register & value flow tracker"
+            setOnClickListener {
+                val uri = lastSelectedUri
+                val term = searchInput.text.toString().trim()
+                if (uri == null) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Select an APK first.", Toast.LENGTH_SHORT).show()
+                } else if (term.isBlank()) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Enter a class/method name, value (for example 0x1), or register (v0) first.", Toast.LENGTH_LONG).show()
+                } else {
+                    traceRegisterValueFlow(uri, term)
+                }
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
         val reportButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         reportButtons.addView(Button(this).apply {
             text = "Copy"
@@ -577,6 +591,154 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }, "DexSearchWorker").start()
     }
 
+    /**
+     * Static, intraprocedural register/value-flow view. It follows the latest
+     * visible definition of each DEX register and annotates subsequent uses.
+     * This is a heuristic bytecode view, not runtime tracing or full SSA analysis.
+     */
+    private fun traceRegisterValueFlow(uri: Uri, query: String) {
+        if (inspectionRunning) return
+        inspectionRunning = true
+        statusText.text = "Tracing register/value flow for: $query"
+        resultText.text = "Scanning DEX methods and following register definitions…"
+        Thread({
+            val out = StringBuilder()
+            val term = query.trim()
+            val registerQuery = Regex("(?i)^v(\\d+)$").matchEntire(term)?.groupValues?.get(1)?.toIntOrNull()
+            var dexCount = 0
+            var parsedCount = 0
+            var matchedMethods = 0
+            var skipped = 0
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(BufferedInputStream(input)).use { zip ->
+                        var entry = zip.nextEntry
+                        while (entry != null && out.length < MAX_REPORT_CHARS && matchedMethods < MAX_VALUE_FLOW_METHODS) {
+                            if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
+                                dexCount++
+                                val dexName = entry.name
+                                val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                if (bytes == null) {
+                                    skipped++
+                                    out.appendLine("\\nDEX $dexName: skipped (over safety limit)")
+                                } else {
+                                    try {
+                                        val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                        parsedCount++
+                                        for (clazz in dex.classes) {
+                                            if (out.length >= MAX_REPORT_CHARS || matchedMethods >= MAX_VALUE_FLOW_METHODS) break
+                                            val className = type(clazz.type)
+                                            for (method in clazz.methods) {
+                                                if (out.length >= MAX_REPORT_CHARS || matchedMethods >= MAX_VALUE_FLOW_METHODS) break
+                                                val impl = method.implementation ?: continue
+                                                val signature = "$" + "{className}->" + "$" + "{method.name}(" + "$" + "{method.parameterTypes.joinToString { type(it.toString()) }}):" + "$" + "{type(method.returnType)}"
+                                                val instructions = impl.instructions.toList()
+                                                val rendered = instructions.map { renderInstruction(it) }
+                                                val methodMatches = signature.contains(term, true) ||
+                                                    rendered.any { it.contains(term, true) } ||
+                                                    (registerQuery != null && rendered.any { it.contains("v$" + "registerQuery") })
+                                                if (!methodMatches) continue
+
+                                                matchedMethods++
+                                                out.appendLine("\\n========== REGISTER / VALUE FLOW: $dexName ==========")
+                                                out.appendLine("METHOD: $signature")
+                                                out.appendLine("REGISTERS: " + "$" + "{impl.registerCount}; instructions: " + "$" + "{instructions.size}")
+                                                out.appendLine("Legend: DEF = likely destination register; USE = register's latest earlier visible definition.")
+                                                val latestDefinition = mutableMapOf<Int, Pair<Int, String>>()
+                                                var address = 0
+                                                for (index in instructions.indices) {
+                                                    if (out.length >= MAX_REPORT_CHARS) break
+                                                    val instruction = instructions[index]
+                                                    val opcode = instruction.opcode.name
+                                                    val line = rendered[index]
+                                                    val destination = if (
+                                                        opcode.startsWith("CONST") ||
+                                                        opcode.startsWith("MOVE") ||
+                                                        opcode.startsWith("NEW_") ||
+                                                        opcode.startsWith("SGET") ||
+                                                        opcode.startsWith("IGET") ||
+                                                        opcode.startsWith("AGET") ||
+                                                        opcode.startsWith("ARRAY_LENGTH") ||
+                                                        opcode.startsWith("INSTANCE_OF") ||
+                                                        opcode.startsWith("CHECK_CAST") ||
+                                                        opcode.startsWith("CMP") ||
+                                                        opcode.startsWith("ADD_") ||
+                                                        opcode.startsWith("SUB_") ||
+                                                        opcode.startsWith("MUL_") ||
+                                                        opcode.startsWith("DIV_") ||
+                                                        opcode.startsWith("REM_") ||
+                                                        opcode.startsWith("AND_") ||
+                                                        opcode.startsWith("OR_") ||
+                                                        opcode.startsWith("XOR_") ||
+                                                        opcode.startsWith("SHL_") ||
+                                                        opcode.startsWith("SHR_") ||
+                                                        opcode.startsWith("USHR_") ||
+                                                        opcode.startsWith("NEG_") ||
+                                                        opcode.startsWith("NOT_") ||
+                                                        opcode.endsWith("_TO_INT") ||
+                                                        opcode.endsWith("_TO_LONG") ||
+                                                        opcode.endsWith("_TO_FLOAT") ||
+                                                        opcode.endsWith("_TO_DOUBLE") ||
+                                                        opcode.endsWith("_TO_BYTE") ||
+                                                        opcode.endsWith("_TO_CHAR") ||
+                                                        opcode.endsWith("_TO_SHORT")
+                                                    ) (instruction as? OneRegisterInstruction)?.registerA
+                                                        ?: (instruction as? TwoRegisterInstruction)?.registerA
+                                                        ?: (instruction as? ThreeRegisterInstruction)?.registerA
+                                                    else null
+                                                    val regs = Regex("v(\\d+)").findAll(line)
+                                                        .mapNotNull { it.groupValues[1].toIntOrNull() }.distinct().toList()
+                                                    val sourceRegs = if (destination != null && regs.firstOrNull() == destination) regs.drop(1) else regs
+                                                    val useNotes = sourceRegs.mapNotNull { reg ->
+                                                        latestDefinition[reg]?.let { (defIndex, defText) -> "v$" + "{reg} from @$" + "{defIndex} ($" + "{defText})" }
+                                                    }
+                                                    val isRelevantRegister = registerQuery == null ||
+                                                        destination == registerQuery || sourceRegs.contains(registerQuery)
+                                                    val isRelevantLine = line.contains(term, true) ||
+                                                        signature.contains(term, true) ||
+                                                        (registerQuery != null && isRelevantRegister)
+                                                    val defText = if (destination != null) "DEF v$" + destination else null
+                                                    if (isRelevantLine || useNotes.isNotEmpty() || opcode.startsWith("MOVE_RESULT")) {
+                                                        out.appendLine("%04x  %s".format(address, line))
+                                                        if (defText != null) out.appendLine("      $defText")
+                                                        if (useNotes.isNotEmpty()) out.appendLine("      USE " + useNotes.joinToString("; "))
+                                                    }
+                                                    if (destination != null) latestDefinition[destination] = index to line
+                                                    address += instruction.codeUnits
+                                                }
+                                            }
+                                        }
+                                    } catch (ex: Exception) {
+                                        skipped++
+                                        out.appendLine("\\nDEX $dexName: parse failed (" + "$" + "{ex.message ?: ex.javaClass.simpleName})")
+                                    }
+                                }
+                            }
+                            zip.closeEntry()
+                            entry = zip.nextEntry
+                        }
+                    }
+                } ?: out.appendLine("Could not open selected APK.")
+            } catch (oom: OutOfMemoryError) {
+                out.appendLine("\\nFlow scan stopped to protect device memory.")
+            } catch (ex: Exception) {
+                out.appendLine("\\nFlow scan incomplete: " + "$" + "{ex.message ?: ex.javaClass.simpleName}")
+            }
+            if (matchedMethods == 0) out.appendLine("\\nNo methods matched '$term'. Try a class/method name, a value such as 0x1, or a register such as v0.")
+            out.appendLine("\\nFLOW SUMMARY: DEX entries=$" + "{dexCount}; parsed=$" + "{parsedCount}; methods shown=$" + "{matchedMethods}; skipped=$" + "{skipped}.")
+            out.appendLine("Limitations: flow is static and method-local. Branch merges, wide register pairs, exception paths, reflection, native code, and runtime/server decisions are not fully resolved. A constant such as 0x1 is not by itself proof of a premium or entitlement decision.")
+            val report = out.toString().take(MAX_REPORT_CHARS)
+            runOnUiThread {
+                inspectionRunning = false
+                exportText = report
+                displayedReport = report
+                resultText.text = report
+                statusText.text = "Value flow complete — $" + "{matchedMethods} methods; $" + "{skipped} skipped"
+                loadMoreButton.isEnabled = lastSelectedUri != null
+            }
+        }, "DexValueFlowWorker").start()
+    }
+
     private fun inspect(uri: Uri) {
         if (inspectionRunning) return
         lastSelectedUri = uri
@@ -864,6 +1026,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_STRINGS = 200
         private const val MAX_REPORT_CHARS = 300_000
         private const val MAX_REFERENCE_HITS = 5000
+        private const val MAX_VALUE_FLOW_METHODS = 300
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
