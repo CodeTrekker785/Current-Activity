@@ -3,6 +3,9 @@ package io.github.ratul.topactivity.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
@@ -21,6 +24,7 @@ import org.jf.dexlib2.dexbacked.DexBackedDexFile
 import org.jf.dexlib2.iface.ClassDef
 import org.jf.dexlib2.iface.Field
 import org.jf.dexlib2.iface.Method
+import org.jf.dexlib2.iface.instruction.ReferenceInstruction
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
@@ -136,6 +140,20 @@ class DexClassInspectorActivity : AppCompatActivity() {
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(searchButtons, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "Trace behavior / controller"
+            setOnClickListener {
+                val uri = lastSelectedUri
+                val term = searchInput.text.toString().trim()
+                if (uri == null) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Select an APK first.", Toast.LENGTH_SHORT).show()
+                } else if (term.isBlank()) {
+                    Toast.makeText(this@DexClassInspectorActivity, "Enter a class, method, or field name first.", Toast.LENGTH_SHORT).show()
+                } else {
+                    findReferences(uri, term)
+                }
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
         val reportButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         reportButtons.addView(Button(this).apply {
             text = "Copy"
@@ -171,7 +189,124 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }
         scroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        polishScreen(root)
         setContentView(root)
+    }
+
+    /**
+     * Static cross-reference search. Reports DEX instructions that reference the
+     * requested class/member and the enclosing class/method. This is not runtime
+     * tracing and cannot reveal server-side decisions or reflection-only links.
+     */
+    private fun findReferences(uri: Uri, query: String) {
+        if (inspectionRunning) return
+        inspectionRunning = true
+        statusText.text = "Tracing class, method, field, string, and call references: $query"
+        resultText.text = "Tracing matching definitions, string constants, field accesses, and method calls…"
+        Thread({
+            val out = StringBuilder()
+            val normalized = query.trim()
+            val variants = setOf(
+                normalized,
+                normalized.replace('.', '/'),
+                "L" + normalized.replace('.', '/') + ";"
+            ).filter { it.isNotBlank() }
+            var dexCount = 0
+            var parsedCount = 0
+            var hits = 0
+            var skipped = 0
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    ZipInputStream(BufferedInputStream(input)).use { zip ->
+                        var entry = zip.nextEntry
+                        while (entry != null && out.length < MAX_REPORT_CHARS && hits < MAX_REFERENCE_HITS) {
+                            if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
+                                dexCount++
+                                val dexName = entry.name
+                                val bytes = readBounded(zip, MAX_DEX_BYTES)
+                                if (bytes == null) {
+                                    skipped++
+                                    out.appendLine("\nDEX $dexName: skipped (over safety limit)")
+                                } else {
+                                    try {
+                                        val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
+                                        parsedCount++
+                                        for (clazz in dex.classes) {
+                                            val className = type(clazz.type)
+                                            if (variants.any { className.contains(it, true) }) {
+                                                out.appendLine("\nCLASS DEFINITION: $className [$dexName]")
+                                                out.appendLine("  Superclass: ${clazz.superclass?.let { type(it) } ?: "<none>"}")
+                                                out.appendLine("  Fields: ${clazz.fields.joinToString { it.name }.ifBlank { "<none>" }}")
+                                                out.appendLine("  Methods: ${clazz.methods.joinToString { it.name + "()" }.ifBlank { "<none>" }}")
+                                            }
+                                            for (method in clazz.methods) {
+                                                val impl = method.implementation ?: continue
+                                                var address = 0
+                                                for (ins in impl.instructions) {
+                                                    if (out.length >= MAX_REPORT_CHARS || hits >= MAX_REFERENCE_HITS) break
+                                                    if (ins is ReferenceInstruction) {
+                                                        val refText = ins.reference.toString()
+                                                        if (variants.any { refText.contains(it, true) } ||
+                                                            (refText.contains(normalized, true))) {
+                                                            out.appendLine("\nREFERENCE #${hits + 1} [$dexName]")
+                                                            out.appendLine("  In class: $className")
+                                                            out.appendLine("  In method: ${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})")
+                                                            out.appendLine("  Offset: 0x${address.toString(16)}")
+                                                            val opcode = ins.opcode.name
+                                                            val kind = when {
+                                                                opcode.startsWith("INVOKE") -> "METHOD CALL / DISPATCH"
+                                                                opcode.contains("IGET") || opcode.contains("SGET") -> "FIELD READ"
+                                                                opcode.contains("IPUT") || opcode.contains("SPUT") -> "FIELD WRITE"
+                                                                opcode.startsWith("CONST_STRING") -> "STRING CONSTANT"
+                                                                refText.startsWith("L") -> "CLASS / TYPE REFERENCE"
+                                                                refText.contains("->") && refText.contains(":") -> "FIELD / MEMBER REFERENCE"
+                                                                else -> "DEX REFERENCE"
+                                                            }
+                                                            out.appendLine("  Relationship: $kind")
+                                                            out.appendLine("  Opcode: $opcode")
+                                                            out.appendLine("  Target: $refText")
+                                                            if (opcode.startsWith("INVOKE")) {
+                                                                out.appendLine("  Trace hint: inspect the target method next; this instruction is a possible call edge.")
+                                                            } else if (kind == "FIELD READ" || kind == "FIELD WRITE") {
+                                                                out.appendLine("  Trace hint: this instruction accesses the field; inspect its declaration and all other reads/writes.")
+                                                            }
+                                                            hits++
+                                                        }
+                                                    }
+                                                    address += ins.codeUnits
+                                                }
+                                                if (hits >= MAX_REFERENCE_HITS) break
+                                            }
+                                            if (hits >= MAX_REFERENCE_HITS || out.length >= MAX_REPORT_CHARS) break
+                                        }
+                                    } catch (ex: Exception) {
+                                        skipped++
+                                        out.appendLine("\nDEX $dexName: parse failed (${ex.message ?: ex.javaClass.simpleName})")
+                                    }
+                                }
+                            }
+                            zip.closeEntry()
+                            entry = zip.nextEntry
+                        }
+                    }
+                } ?: out.appendLine("Could not open selected APK.")
+            } catch (oom: OutOfMemoryError) {
+                out.appendLine("\nSearch stopped to protect device memory.")
+            } catch (ex: Exception) {
+                out.appendLine("\nSearch incomplete: ${ex.message ?: ex.javaClass.simpleName}")
+            }
+            if (hits == 0 && out.isEmpty()) out.appendLine("No matching class/member references found for: $normalized")
+            out.appendLine("\nREFERENCE MAP SUMMARY: DEX files=$dexCount; parsed=$parsedCount; skipped=$skipped; instruction references=$hits.")
+            out.appendLine("How to use this for a controller (e.g. Premium): search one term at a time such as Premium, Renew, Billing, subscription, a displayed price, or a product ID. Follow METHOD CALL targets to handlers and FIELD READ/WRITE results to state variables. Inspect each enclosing class/method in the report.")\n            out.appendLine("Limitations: this is static reference tracing, not live execution or a guaranteed complete data-flow graph. Reflection, native code, dynamically loaded DEX, obfuscation, resource-only UI, and server-side decisions may not be resolved.")
+            val report = out.toString().take(MAX_REPORT_CHARS)
+            runOnUiThread {
+                inspectionRunning = false
+                exportText = report
+                displayedReport = report
+                resultText.text = report
+                statusText.text = "Reference map complete — $hits matches; $skipped DEX entries skipped"
+            }
+        }, "DexReferenceMapWorker").start()
     }
 
     private fun filterReport(query: String) {
@@ -480,6 +615,82 @@ class DexClassInspectorActivity : AppCompatActivity() {
         return names.filter { f and it.first != 0 }.joinToString(" ") { it.second }.ifBlank { "package-private" }
     }
 
+    /**
+     * Consistent mobile-first dark UI: readable hierarchy, rounded controls,
+     * clear primary actions, and high-contrast report surfaces.
+     */
+    private fun polishScreen(view: ViewGroup) {
+        val background = Color.rgb(12, 18, 32)
+        val surface = Color.rgb(23, 32, 51)
+        val accent = Color.rgb(250, 190, 72)
+        val textPrimary = Color.rgb(241, 245, 249)
+        val textSecondary = Color.rgb(172, 185, 205)
+        view.setBackgroundColor(background)
+        for (i in 0 until view.childCount) {
+            val child = view.getChildAt(i)
+            when (child) {
+                is MaterialToolbar -> {
+                    child.setBackgroundColor(background)
+                    child.setTitleTextColor(textPrimary)
+                }
+                is Button -> {
+                    val label = child.text?.toString().orEmpty()
+                    val primary = label.contains("Select APK", true) ||
+                        label.contains("Trace behavior", true) ||
+                        label.contains("Apply class filter", true) ||
+                        label == "Search" || label.contains("Find callers", true)
+                    child.isAllCaps = false
+                    child.textSize = 14f
+                    child.minHeight = dp(48)
+                    child.setPadding(dp(14), dp(10), dp(14), dp(10))
+                    child.backgroundTintList = ColorStateList.valueOf(if (primary) accent else surface)
+                    child.setTextColor(if (primary) Color.rgb(31, 35, 42) else textPrimary)
+                    child.elevation = dp(if (primary) 2 else 0).toFloat()
+                }
+                is EditText -> {
+                    child.setTextColor(textPrimary)
+                    child.setHintTextColor(textSecondary)
+                    child.textSize = 15f
+                    child.setPadding(dp(14), dp(12), dp(14), dp(12))
+                    child.background = GradientDrawable().apply {
+                        setColor(surface)
+                        cornerRadius = dp(14).toFloat()
+                        setStroke(dp(1), Color.rgb(58, 72, 96))
+                    }
+                }
+                is TextView -> {
+                    if (child.textSize >= 11f) child.setTextColor(textSecondary)
+                }
+                is ScrollView -> {
+                    child.setBackgroundColor(background)
+                    if (child.childCount > 0 && child.getChildAt(0) is ViewGroup) {
+                        polishNestedContent(child.getChildAt(0) as ViewGroup, surface, textPrimary, textSecondary)
+                    }
+                }
+                is ViewGroup -> {
+                    polishScreen(child)
+                }
+            }
+        }
+    }
+
+    private fun polishNestedContent(container: ViewGroup, surface: Int, textPrimary: Int, textSecondary: Int) {
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            if (child is TextView) {
+                child.setTextColor(textPrimary)
+                child.setPadding(dp(12), dp(10), dp(12), dp(10))
+                child.setTextIsSelectable(true)
+                child.background = GradientDrawable().apply {
+                    setColor(surface)
+                    cornerRadius = dp(12).toFloat()
+                }
+            } else if (child is ViewGroup) {
+                polishNestedContent(child, surface, textPrimary, textSecondary)
+            }
+        }
+    }
+
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
@@ -490,6 +701,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_INSTRUCTIONS = 300
         private const val MAX_STRINGS = 1000
         private const val MAX_REPORT_CHARS = 1_500_000
+        private const val MAX_REFERENCE_HITS = 5000
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
