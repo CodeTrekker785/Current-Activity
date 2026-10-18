@@ -227,6 +227,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         scroll.addView(resultText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val page = intent.getStringExtra(EXTRA_PAGE) ?: PAGE_HOME
+        lastSelectedUri = intent.data
         val pageTitle = when (page) {
             PAGE_INSPECT -> "APK Inspector"
             PAGE_CLASSES -> "Class Browser"
@@ -246,6 +247,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
             val text = labels(child)
             val visible = when {
                 child is MaterialToolbar -> { child.title = pageTitle; true }
+                child === pageMenu -> page == PAGE_HOME
                 page == PAGE_HOME -> text.contains("Inspect class hierarchy") || text.contains("APK Inspector") ||
                     text.contains("Class Browser") || text.contains("Universal Search") ||
                     text.contains("Behavior Tracer") || text.contains("Reports") || text.contains("Developer Toolkit")
