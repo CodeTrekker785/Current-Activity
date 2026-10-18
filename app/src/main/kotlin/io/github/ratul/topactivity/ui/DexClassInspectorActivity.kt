@@ -699,7 +699,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                     val isRelevantLine = line.contains(term, true) ||
                                                         signature.contains(term, true) ||
                                                         (registerQuery != null && isRelevantRegister)
-                                                    val defText = if (destination != null) "DEF v$" + destination else null
+                                                    val defText = if (destination != null) "DEF v" + destination else null
                                                     if (isRelevantLine || useNotes.isNotEmpty() || opcode.startsWith("MOVE_RESULT")) {
                                                         out.appendLine("%04x  %s".format(address, line))
                                                         if (defText != null) out.appendLine("      $defText")
