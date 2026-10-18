@@ -25,6 +25,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import io.github.ratul.topactivity.App
 import io.github.ratul.topactivity.R
 import io.github.ratul.topactivity.extensions.getScreenSize
@@ -63,7 +64,19 @@ class PopupManager(private val context: Context) {
         layoutParams.gravity = Gravity.CENTER
         layoutParams.width = viewSize
 
-        windowManager.addView(baseView, layoutParams)
+        try {
+            windowManager.addView(view, layoutParams)
+        } catch (e: SecurityException) {
+            baseView = null
+            DataRepository.updateStatus(false)
+            Toast.makeText(context, "Floating window permission is unavailable. Enable display-over-other-apps permission and try again.", Toast.LENGTH_LONG).show()
+            return
+        } catch (e: WindowManager.BadTokenException) {
+            baseView = null
+            DataRepository.updateStatus(false)
+            Toast.makeText(context, "Android rejected the floating window. Please try starting monitoring again.", Toast.LENGTH_LONG).show()
+            return
+        }
 
         val appName = view.findViewById<TextView>(R.id.app_name)
         val packageName = view.findViewById<TextView>(R.id.package_name)
@@ -163,8 +176,15 @@ class PopupManager(private val context: Context) {
 
     private fun hide() {
         baseView?.let {
-            windowManager.removeView(it)
-            baseView = null
+            try {
+                if (it.isAttachedToWindow) windowManager.removeView(it)
+            } catch (_: IllegalArgumentException) {
+                // The window was already detached by the system.
+            } catch (_: WindowManager.BadTokenException) {
+                // The window token is no longer valid.
+            } finally {
+                baseView = null
+            }
         }
         popupScope.cancel()
     }
