@@ -3,6 +3,9 @@ package io.github.ratul.topactivity.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
@@ -134,6 +137,7 @@ class DeveloperToolkitActivity : AppCompatActivity() {
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(list, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        polishScreen(root)
         setContentView(root)
 
         val apkPath = intent.getStringExtra(EXTRA_APK_PATH)
@@ -507,6 +511,82 @@ class DeveloperToolkitActivity : AppCompatActivity() {
         return output.toByteArray()
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    /**
+     * Consistent mobile-first dark UI: readable hierarchy, rounded controls,
+     * clear primary actions, and high-contrast report surfaces.
+     */
+    private fun polishScreen(view: ViewGroup) {
+        val background = Color.rgb(12, 18, 32)
+        val surface = Color.rgb(23, 32, 51)
+        val accent = Color.rgb(250, 190, 72)
+        val textPrimary = Color.rgb(241, 245, 249)
+        val textSecondary = Color.rgb(172, 185, 205)
+        view.setBackgroundColor(background)
+        for (i in 0 until view.childCount) {
+            val child = view.getChildAt(i)
+            when (child) {
+                is MaterialToolbar -> {
+                    child.setBackgroundColor(background)
+                    child.setTitleTextColor(textPrimary)
+                }
+                is Button -> {
+                    val label = child.text?.toString().orEmpty()
+                    val primary = label.contains("Select APK", true) ||
+                        label.contains("Trace behavior", true) ||
+                        label.contains("Apply class filter", true) ||
+                        label == "Search" || label.contains("Find callers", true)
+                    child.isAllCaps = false
+                    child.textSize = 14f
+                    child.minHeight = dp(48)
+                    child.setPadding(dp(14), dp(10), dp(14), dp(10))
+                    child.backgroundTintList = ColorStateList.valueOf(if (primary) accent else surface)
+                    child.setTextColor(if (primary) Color.rgb(31, 35, 42) else textPrimary)
+                    child.elevation = dp(if (primary) 2 else 0).toFloat()
+                }
+                is EditText -> {
+                    child.setTextColor(textPrimary)
+                    child.setHintTextColor(textSecondary)
+                    child.textSize = 15f
+                    child.setPadding(dp(14), dp(12), dp(14), dp(12))
+                    child.background = GradientDrawable().apply {
+                        setColor(surface)
+                        cornerRadius = dp(14).toFloat()
+                        setStroke(dp(1), Color.rgb(58, 72, 96))
+                    }
+                }
+                is TextView -> {
+                    if (child.textSize >= 11f) child.setTextColor(textSecondary)
+                }
+                is ScrollView -> {
+                    child.setBackgroundColor(background)
+                    if (child.childCount > 0 && child.getChildAt(0) is ViewGroup) {
+                        polishNestedContent(child.getChildAt(0) as ViewGroup, surface, textPrimary, textSecondary)
+                    }
+                }
+                is ViewGroup -> {
+                    polishScreen(child)
+                }
+            }
+        }
+    }
+
+    private fun polishNestedContent(container: ViewGroup, surface: Int, textPrimary: Int, textSecondary: Int) {
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            if (child is TextView) {
+                child.setTextColor(textPrimary)
+                child.setPadding(dp(12), dp(10), dp(12), dp(10))
+                child.setTextIsSelectable(true)
+                child.background = GradientDrawable().apply {
+                    setColor(surface)
+                    cornerRadius = dp(12).toFloat()
+                }
+            } else if (child is ViewGroup) {
+                polishNestedContent(child, surface, textPrimary, textSecondary)
+            }
+        }
+    }
+
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
