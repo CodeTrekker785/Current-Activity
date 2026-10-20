@@ -46,6 +46,16 @@ class LiveActivityInspectorActivity : AppCompatActivity() {
             text = "Grant / check Usage Access"
             setOnClickListener { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "View Live Activity Report"
+            setOnClickListener {
+                startActivity(Intent(this@LiveActivityInspectorActivity, InspectorReportActivity::class.java).apply {
+                    putExtra(InspectorReportActivity.EXTRA_TYPE, InspectorReportActivity.TYPE_LIVE)
+                    putExtra(InspectorReportActivity.EXTRA_CONTENT, resultText.text.toString())
+                    putExtra(InspectorReportActivity.EXTRA_CAPTURED, DateFormat.getDateTimeInstance().format(Date()))
+                })
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
         resultText = TextView(this).apply {
             textSize = 14f
             setTextIsSelectable(true)
