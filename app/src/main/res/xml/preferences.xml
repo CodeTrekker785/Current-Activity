@@ -62,6 +62,12 @@
             android:title="DEX Class Inspector"
             android:summary="Inspect class names inside an APK's DEX files"
             app:iconSpaceReserved="false" />
+
+        <androidx.preference.Preference
+            android:key="runtime_inspector"
+            android:title="Live Activity & Runtime Inspector"
+            android:summary="Track foreground activities and inspect Android-exposed runtime metadata"
+            app:iconSpaceReserved="false" />
     </androidx.preference.PreferenceCategory>
 
     <androidx.preference.PreferenceCategory
