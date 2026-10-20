@@ -108,7 +108,7 @@ class RuntimeInspectorActivity : AppCompatActivity() {
         }
         val target = resolveTargetPackage(entered)
         if (target == null) {
-            detailText.text = "Could not match '$entered' to an installed app. You can enter either the app package (for example, com.mixvibes.crossdj) or its activity class (for example, com.mixvibes.crossdj.CrossDJActivity). Open the app first and use 'Use foreground app' if available. Android only exposes packages visible to this app; work-profile apps or hidden/non-launchable packages may not be discoverable."
+            detailText.text = "Could not match '$entered' to an installed app. You can enter either the app package (for example, com.mixvibes.crossdj) or its activity class (for example, com.mixvibes.crossdj.CrossDJActivity). Check that the app is installed and enter its package ID. Android only exposes packages visible to this app; work-profile apps or hidden/non-launchable packages may not be discoverable."
             return
         }
         if (target != entered) packageInput.setText(target)
@@ -144,7 +144,7 @@ class RuntimeInspectorActivity : AppCompatActivity() {
                 appendLine("No target process was modified, injected into, or terminated.")
             }
         } catch (e: Exception) {
-            detailText.text = "The app '$target' was identified, but Android would not return its package metadata (${e.javaClass.simpleName}). This can happen with package-visibility or work-profile restrictions. Try launching the app, then use 'Use foreground app'. The activity name and package ID are not interchangeable."
+            detailText.text = "The app '$target' was identified, but Android would not return its package metadata (${e.javaClass.simpleName}). This can happen with package-visibility or work-profile restrictions. Check that the app is installed and enter its package ID or full activity class name."
         }
     }
 
@@ -199,7 +199,7 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             if (entered.isBlank()) {
                 appendLine("Enter a package name or activity class above, then tap this button again.")
             } else if (target == null) {
-                appendLine("Could not match '$entered' to a visible installed app. Enter its package ID (for example, com.mixvibes.crossdj) or launch it and use 'Use foreground app'.")
+                appendLine("Could not match '$entered' to a visible installed app. Enter its package ID (for example, com.mixvibes.crossdj) or enter its full activity class name.")
             } else {
                 if (target != entered) packageInput.setText(target)
                 try {
