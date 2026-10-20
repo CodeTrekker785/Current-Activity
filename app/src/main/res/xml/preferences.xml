@@ -64,9 +64,15 @@
             app:iconSpaceReserved="false" />
 
         <androidx.preference.Preference
+            android:key="live_activity_inspector"
+            android:title="Live Activity Inspector"
+            android:summary="View live activity results on a dedicated page"
+            app:iconSpaceReserved="false" />
+
+        <androidx.preference.Preference
             android:key="runtime_inspector"
-            android:title="Live Activity &amp; Runtime Inspector"
-            android:summary="Track foreground activities and inspect Android-exposed runtime metadata"
+            android:title="Runtime Inspector"
+            android:summary="View app metadata and permitted memory results on a dedicated page"
             app:iconSpaceReserved="false" />
     </androidx.preference.PreferenceCategory>
 
