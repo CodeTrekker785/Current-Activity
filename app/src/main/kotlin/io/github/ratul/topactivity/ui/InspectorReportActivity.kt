@@ -55,7 +55,7 @@ class InspectorReportActivity : AppCompatActivity() {
             text = "Share / export"
             setOnClickListener {
                 val share = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
+                    setType("text/plain")
                     putExtra(Intent.EXTRA_SUBJECT, title)
                     putExtra(Intent.EXTRA_TEXT, report)
                 }
