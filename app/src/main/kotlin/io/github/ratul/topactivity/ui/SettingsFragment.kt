@@ -16,6 +16,7 @@
  */
 package io.github.ratul.topactivity.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.FragmentActivity
@@ -40,6 +41,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     lateinit var useSystemFont: SwitchPreferenceCompat
     lateinit var checkUpdate: Preference
     lateinit var dexClassInspector: Preference
+    lateinit var runtimeInspector: Preference
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
@@ -54,6 +56,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
         useSystemFont = findPreference("system_font")!!
         checkUpdate = findPreference("check_update")!!
         dexClassInspector = findPreference("dex_class_inspector")!!
+        runtimeInspector = findPreference("runtime_inspector")!!
+        runtimeInspector.setOnPreferenceClickListener {
+            startActivity(Intent(requireContext(), RuntimeInspectorActivity::class.java))
+            true
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
