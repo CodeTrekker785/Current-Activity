@@ -149,13 +149,47 @@ class RuntimeInspectorActivity : AppCompatActivity() {
         foregroundText.text = "Package: $pkg\nActivity/class: ${cls ?: "(not exposed)"}\nLast resume: ${DateFormat.getDateTimeInstance().format(Date(lastTime))}\nStatus: live polling active"
     }
 
+    /**
+     * Accepts either a package ID or a fully-qualified activity/class name.
+     * Launcher visibility is declared in the manifest, so class names can be
+     * mapped back to their installed package on Android 11+.
+     */
+    @Suppress("DEPRECATION")
+    private fun resolveTargetPackage(input: String): String? {
+        val value = input.trim()
+        if (value.isBlank()) return null
+        try {
+            packageManager.getPackageInfo(value, 0)
+            return value
+        } catch (_: Exception) {
+            // It may be an activity class rather than a package ID.
+        }
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val launchers = try {
+            packageManager.queryIntentActivities(launcherIntent, 0)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return launchers
+            .mapNotNull { it.activityInfo?.packageName }
+            .distinct()
+            .sortedByDescending { it.length }
+            .firstOrNull { pkg -> value == pkg || value.startsWith("$pkg.") }
+    }
+
     @Suppress("DEPRECATION")
     private fun inspectTarget() {
-        val target = packageInput.text.toString().trim()
-        if (target.isBlank()) {
-            detailText.text = "Enter a package name first."
+        val entered = packageInput.text.toString().trim()
+        if (entered.isBlank()) {
+            detailText.text = "Enter a package name or an activity class name first."
             return
         }
+        val target = resolveTargetPackage(entered)
+        if (target == null) {
+            detailText.text = "Could not match '$entered' to an installed app. You can enter either the app package (for example, com.mixvibes.crossdj) or its activity class (for example, com.mixvibes.crossdj.CrossDJActivity). Open the app first and use 'Use foreground app' if available. Android only exposes packages visible to this app; work-profile apps or hidden/non-launchable packages may not be discoverable."
+            return
+        }
+        if (target != entered) packageInput.setText(target)
         try {
             val info: PackageInfo = packageManager.getPackageInfo(target, PackageManagerFlags.activities())
             val appInfo = info.applicationInfo
@@ -188,7 +222,7 @@ class RuntimeInspectorActivity : AppCompatActivity() {
                 appendLine("No target process was modified, injected into, or terminated.")
             }
         } catch (e: Exception) {
-            detailText.text = "Could not inspect '$target': ${e.javaClass.simpleName}: ${e.message ?: "package details unavailable"}.\n\nTry the exact package name from the Live Activity panel. Android package visibility and profile/OS restrictions can prevent metadata access."
+            detailText.text = "The app '$target' was identified, but Android would not return its package metadata (${e.javaClass.simpleName}). This can happen with package-visibility or work-profile restrictions. Try launching the app, then use 'Use foreground app'. The activity name and package ID are not interchangeable."
         }
     }
 
@@ -199,7 +233,8 @@ class RuntimeInspectorActivity : AppCompatActivity() {
      */
     @Suppress("DEPRECATION")
     private fun inspectMemory() {
-        val target = packageInput.text.toString().trim()
+        val entered = packageInput.text.toString().trim()
+        val target = resolveTargetPackage(entered)
         val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
         val system = ActivityManager.MemoryInfo()
         am.getMemoryInfo(system)
@@ -239,9 +274,12 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             }
             appendLine()
             appendLine("TARGET APP PROCESS")
-            if (target.isBlank()) {
-                appendLine("Enter a target package name above, then tap this button again.")
+            if (entered.isBlank()) {
+                appendLine("Enter a package name or activity class above, then tap this button again.")
+            } else if (target == null) {
+                appendLine("Could not match '$entered' to a visible installed app. Enter its package ID (for example, com.mixvibes.crossdj) or launch it and use 'Use foreground app'.")
             } else {
+                if (target != entered) packageInput.setText(target)
                 try {
                     val matching = am.runningAppProcesses.orEmpty().filter { process ->
                         process.processName == target ||
