@@ -59,6 +59,16 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             text = "Inspect permitted memory stats"
             setOnClickListener { inspectMemory() }
         }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
+            text = "View Runtime Report"
+            setOnClickListener {
+                startActivity(Intent(this@RuntimeInspectorActivity, InspectorReportActivity::class.java).apply {
+                    putExtra(InspectorReportActivity.EXTRA_TYPE, InspectorReportActivity.TYPE_RUNTIME)
+                    putExtra(InspectorReportActivity.EXTRA_CONTENT, detailText.text.toString())
+                    putExtra(InspectorReportActivity.EXTRA_CAPTURED, DateFormat.getDateTimeInstance().format(Date()))
+                })
+            }
+        }, LinearLayout.LayoutParams(-1, -2))
         detailText = TextView(this).apply {
             text = "Enter a package name and tap Inspect package, or inspect permitted memory stats."
             textSize = 14f
