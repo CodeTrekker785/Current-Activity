@@ -60,6 +60,10 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             setOnClickListener { inspectMemory() }
         }, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
+            text = "Advanced access assessment"
+            setOnClickListener { inspectAdvancedAccess() }
+        }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
             text = "View Runtime Report"
             setOnClickListener {
                 startActivity(Intent(this@RuntimeInspectorActivity, InspectorReportActivity::class.java).apply {
@@ -79,6 +83,59 @@ class RuntimeInspectorActivity : AppCompatActivity() {
         scroll.addView(detailText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+    }
+
+    /**
+     * Reports which authorized inspection paths are plausible without attempting
+     * to read secrets or attach to another app's private process.
+     */
+    @Suppress("DEPRECATION")
+    private fun inspectAdvancedAccess() {
+        val entered = packageInput.text.toString().trim()
+        val target = resolveTargetPackage(entered)
+        if (entered.isBlank() || target == null) {
+            detailText.text = "ADVANCED ACCESS ASSESSMENT\\nEnter an installed app package name first. Android package visibility may prevent some apps from being discovered."
+            return
+        }
+        try {
+            val info = packageManager.getApplicationInfo(target, 0)
+            val debuggable = (info.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            val profile = if (Build.VERSION.SDK_INT >= 28) {
+                if (android.os.Process.is64Bit()) "64-bit process environment" else "32-bit process environment"
+            } else "process bitness not exposed by this API level"
+            detailText.text = buildString {
+                appendLine("ADVANCED ACCESS ASSESSMENT")
+                appendLine("Captured: ${DateFormat.getDateTimeInstance().format(Date())}")
+                appendLine("Target package: $target")
+                appendLine("Target debuggable: $debuggable")
+                appendLine("Android API level: ${Build.VERSION.SDK_INT}")
+                appendLine("Inspector environment: $profile")
+                appendLine()
+                appendLine("AVAILABLE FROM THIS ORDINARY APP")
+                appendLine("• Installed-package metadata that Android exposes")
+                appendLine("• Foreground/activity information and aggregate counters where permitted")
+                appendLine("• Debuggable flag as an indicator, not proof that debugger attachment is available")
+                appendLine()
+                appendLine("AUTHORIZED DEEP-INSPECTION OPTIONS")
+                if (debuggable) {
+                    appendLine("• For an app you own or have explicit permission to test, use Android Studio's debugger/Profiler or a target-provided diagnostic build.")
+                    appendLine("• Heap snapshots and object inspection must be performed through that authorized debugging workflow; this app does not attach to the target.")
+                } else {
+                    appendLine("• The target is not marked debuggable. Use a development build you control, or ask the app owner to provide a diagnostic interface/build.")
+                    appendLine("• Enabling debugging on this inspector does not enable debugging in the target app.")
+                }
+                appendLine()
+                appendLine("SENSITIVE-DATA DIAGNOSTICS")
+                appendLine("• This inspector does not extract, display, or export passwords, session cookies, API keys, or authentication tokens.")
+                appendLine("• For an app you own, test for accidental secret retention using synthetic credentials and report only redacted findings (for example, location/type and pass/fail).")
+                appendLine()
+                appendLine("LIMITATIONS")
+                appendLine("• A debuggable flag does not bypass Android sandbox, profile, OEM, or OS restrictions.")
+                appendLine("• This is a capability assessment, not a heap dump. No memory was read from or modified in the target process.")
+            }
+        } catch (e: Exception) {
+            detailText.text = "ADVANCED ACCESS ASSESSMENT\\nAndroid could not read metadata for '$target' (${e.javaClass.simpleName}). Check package visibility and work-profile restrictions."
+        }
     }
 
     /**
