@@ -65,7 +65,7 @@
 
         <androidx.preference.Preference
             android:key="runtime_inspector"
-            android:title="Live Activity & Runtime Inspector"
+            android:title="Live Activity &amp; Runtime Inspector"
             android:summary="Track foreground activities and inspect Android-exposed runtime metadata"
             app:iconSpaceReserved="false" />
     </androidx.preference.PreferenceCategory>
