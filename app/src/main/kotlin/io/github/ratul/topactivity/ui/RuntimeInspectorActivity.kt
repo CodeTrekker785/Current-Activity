@@ -90,6 +90,10 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             setOnClickListener { inspectTarget() }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(buttons)
+        root.addView(Button(this).apply {
+            text = "Inspect permitted memory stats"
+            setOnClickListener { inspectMemory() }
+        }, LinearLayout.LayoutParams(-1, -2))
         detailText = TextView(this).apply {
             text = "Enter a package name and tap Inspect package."
             textSize = 14f
@@ -190,6 +194,69 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             detailText.text = "Could not inspect '$target': ${e.javaClass.simpleName}: ${e.message ?: "package details unavailable"}.\n\nTry the exact package name from the Live Activity panel. Android package visibility and profile/OS restrictions can prevent metadata access."
+        }
+    }
+
+    /**
+     * Reports only memory metrics Android exposes to this process. This does not
+     * read heap contents, secrets, object values, or another app's private files.
+     */
+    @Suppress("DEPRECATION")
+    private fun inspectMemory() {
+        val target = packageInput.text.toString().trim()
+        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val system = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(system)
+        val own = android.os.Debug.MemoryInfo()
+        android.os.Debug.getMemoryInfo(own)
+
+        detailText.text = buildString {
+            appendLine("MEMORY INSPECTOR")
+            appendLine("System memory")
+            appendLine("Total RAM: \${system.totalMem / 1024L / 1024L} MiB")
+            appendLine("Available RAM: \${system.availMem / 1024L / 1024L} MiB")
+            appendLine("Low-memory state: \${system.lowMemory}")
+            appendLine()
+            appendLine("Current inspector process (\${packageName}, PID \${android.os.Process.myPid()})")
+            appendLine("PSS: \${own.totalPss} kB")
+            appendLine("Private dirty: \${own.totalPrivateDirty} kB")
+            appendLine("Shared dirty: \${own.totalSharedDirty} kB")
+            appendLine()
+            appendLine("Target app process memory")
+            if (target.isBlank()) {
+                appendLine("Enter a target package name above, then tap this button again.")
+            } else {
+                try {
+                    val matching = am.runningAppProcesses.orEmpty().filter { process ->
+                        process.processName == target ||
+                            process.processName.startsWith("$target:") ||
+                            process.pkgList?.contains(target) == true
+                    }
+                    if (matching.isEmpty()) {
+                        appendLine("Android did not expose a running process for '$target'. Open the target app and retry. Recent Android versions may hide other apps' process details.")
+                    } else {
+                        matching.forEach { process ->
+                            appendLine("Process: \${process.processName} (PID \${process.pid})")
+                            try {
+                                val stats = am.getProcessMemoryInfo(intArrayOf(process.pid)).firstOrNull()
+                                if (stats == null) {
+                                    appendLine("Memory metrics unavailable for this process.")
+                                } else {
+                                    appendLine("PSS: \${stats.totalPss} kB")
+                                    appendLine("Private dirty: \${stats.totalPrivateDirty} kB")
+                                    appendLine("Shared dirty: \${stats.totalSharedDirty} kB")
+                                }
+                            } catch (security: SecurityException) {
+                                appendLine("Android denied access to this process's memory metrics.")
+                            }
+                        }
+                    }
+                } catch (security: SecurityException) {
+                    appendLine("Android denied visibility into other app processes.")
+                }
+            }
+            appendLine()
+            appendLine("Privacy boundary: these are aggregate memory counters only, when available. They do not reveal heap objects, passwords, tokens, local variables, or raw private memory. For heap dumps and object-level analysis, use an authorized debugger/profiler with an app you own or are permitted to test.")
         }
     }
 
