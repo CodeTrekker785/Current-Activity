@@ -42,6 +42,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     lateinit var checkUpdate: Preference
     lateinit var dexClassInspector: Preference
     lateinit var runtimeInspector: Preference
+    lateinit var liveActivityInspector: Preference
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
@@ -57,6 +58,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
         checkUpdate = findPreference("check_update")!!
         dexClassInspector = findPreference("dex_class_inspector")!!
         runtimeInspector = findPreference("runtime_inspector")!!
+        liveActivityInspector = findPreference("live_activity_inspector")!!
+        liveActivityInspector.setOnPreferenceClickListener {
+            startActivity(Intent(requireContext(), LiveActivityInspectorActivity::class.java))
+            true
+        }
         runtimeInspector.setOnPreferenceClickListener {
             startActivity(Intent(requireContext(), RuntimeInspectorActivity::class.java))
             true
