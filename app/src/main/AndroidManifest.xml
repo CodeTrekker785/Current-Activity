@@ -39,6 +39,7 @@
         <activity android:name=".ui.DeveloperToolkitActivity" android:exported="false" />
         <activity android:name=".ui.RuntimeInspectorActivity" android:exported="false" />
         <activity android:name=".ui.LiveActivityInspectorActivity" android:exported="false" />
+        <activity android:name=".ui.InspectorReportActivity" android:exported="false" />
 
         <activity
             android:name=".ui.ClipboardActivity"
