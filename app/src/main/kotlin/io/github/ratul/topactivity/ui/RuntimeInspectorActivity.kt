@@ -1,14 +1,11 @@
 package io.github.ratul.topactivity.ui
 
 import android.app.ActivityManager
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -27,16 +24,8 @@ import java.util.Locale
  * ordinary apps; this screen never injects into or modifies the target process.
  */
 class RuntimeInspectorActivity : AppCompatActivity() {
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private lateinit var foregroundText: TextView
     private lateinit var detailText: TextView
     private lateinit var packageInput: EditText
-    private val poll = object : Runnable {
-        override fun run() {
-            refreshForeground()
-            handler.postDelayed(this, 1000L)
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,29 +34,14 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             setPadding(dp(16), dp(4), dp(16), dp(16))
         }
         root.addView(MaterialToolbar(this).apply {
-            title = "Live & Runtime Inspector"
+            title = "Runtime Inspector"
             setNavigationIcon(android.R.drawable.ic_media_previous)
             setNavigationOnClickListener { finish() }
         }, LinearLayout.LayoutParams(-1, dp(56)))
         root.addView(TextView(this).apply {
-            text = "LEVEL 1 · LIVE ACTIVITY INSPECTOR\nTracks the most recently resumed app/activity using Android Usage Access. Refreshes every second while this screen is open."
+            text = "RUNTIME INSPECTOR\nInspect installed-app metadata and Android-exposed process/memory counters. Raw private heap contents, object values, locals and registers are not available to ordinary apps."
             textSize = 14f
             setPadding(0, dp(10), 0, dp(8))
-        })
-        foregroundText = TextView(this).apply {
-            textSize = 14f
-            setTextIsSelectable(true)
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-        }
-        root.addView(foregroundText, LinearLayout.LayoutParams(-1, -2))
-        root.addView(Button(this).apply {
-            text = "Grant / check Usage Access"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-        }, LinearLayout.LayoutParams(-1, -2))
-        root.addView(TextView(this).apply {
-            text = "LEVEL 2 · NO-ROOT PROCESS INSPECTOR\nEnter a package name or use the foreground app. Shows package metadata, exported activities, debug eligibility and permitted memory counters. Raw private heap contents, object values, locals and registers are blocked for ordinary apps by Android."
-            textSize = 14f
-            setPadding(0, dp(18), 0, dp(8))
         })
         packageInput = EditText(this).apply {
             hint = "Package name, e.g. com.example.app"
@@ -77,24 +51,16 @@ class RuntimeInspectorActivity : AppCompatActivity() {
         root.addView(packageInput, LinearLayout.LayoutParams(-1, -2))
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         buttons.addView(Button(this).apply {
-            text = "Use foreground app"
-            setOnClickListener {
-                val target = latestPackage
-                if (!target.isNullOrBlank()) packageInput.setText(target)
-                inspectTarget()
-            }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        buttons.addView(Button(this).apply {
             text = "Inspect package"
             setOnClickListener { inspectTarget() }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
+        }, LinearLayout.LayoutParams(-1, -2))
         root.addView(buttons)
         root.addView(Button(this).apply {
             text = "Inspect permitted memory stats"
             setOnClickListener { inspectMemory() }
         }, LinearLayout.LayoutParams(-1, -2))
         detailText = TextView(this).apply {
-            text = "Enter a package name and tap Inspect package."
+            text = "Enter a package name and tap Inspect package, or inspect permitted memory stats."
             textSize = 14f
             setTextIsSelectable(true)
             setPadding(0, dp(10), 0, dp(10))
@@ -103,50 +69,6 @@ class RuntimeInspectorActivity : AppCompatActivity() {
         scroll.addView(detailText, ViewGroup.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        handler.removeCallbacks(poll)
-        handler.post(poll)
-    }
-
-    override fun onPause() {
-        handler.removeCallbacks(poll)
-        super.onPause()
-    }
-
-    private var latestPackage: String? = null
-
-    @Suppress("DEPRECATION")
-    private fun refreshForeground() {
-        val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-        val now = System.currentTimeMillis()
-        val events = usm.queryEvents(now - 120_000L, now)
-        val event = UsageEvents.Event()
-        var pkg: String? = null
-        var cls: String? = null
-        var lastTime = 0L
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            val resumed = if (Build.VERSION.SDK_INT >= 29) {
-                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
-            } else {
-                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
-            }
-            if (resumed && event.timeStamp >= lastTime) {
-                lastTime = event.timeStamp
-                pkg = event.packageName
-                cls = event.className
-            }
-        }
-        if (pkg.isNullOrBlank()) {
-            latestPackage = null
-            foregroundText.text = "Foreground activity unavailable. Grant Usage Access in Android Settings, then return here."
-            return
-        }
-        latestPackage = pkg
-        foregroundText.text = "Package: $pkg\nActivity/class: ${cls ?: "(not exposed)"}\nLast resume: ${DateFormat.getDateTimeInstance().format(Date(lastTime))}\nStatus: live polling active"
     }
 
     /**
