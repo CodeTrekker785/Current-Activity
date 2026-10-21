@@ -98,7 +98,7 @@ class RuntimeInspectorActivity : AppCompatActivity() {
         val entered = packageInput.text.toString().trim()
         val target = resolveTargetPackage(entered)
         if (entered.isBlank() || target == null) {
-            detailText.text = "ADVANCED ACCESS ASSESSMENT\\nEnter an installed app package name first. Android package visibility may prevent some apps from being discovered."
+            detailText.text = "ADVANCED ACCESS ASSESSMENT\nEnter an installed app package name first. Android package visibility may prevent some apps from being discovered."
             return
         }
         try {
@@ -138,7 +138,7 @@ class RuntimeInspectorActivity : AppCompatActivity() {
                 appendLine("• This is a capability assessment, not a heap dump. No memory was read from or modified in the target process.")
             }
         } catch (e: Exception) {
-            detailText.text = "ADVANCED ACCESS ASSESSMENT\\nAndroid could not read metadata for '$target' (${e.javaClass.simpleName}). Check package visibility and work-profile restrictions."
+            detailText.text = "ADVANCED ACCESS ASSESSMENT\nAndroid could not read metadata for '$target' (${e.javaClass.simpleName}). Check package visibility and work-profile restrictions."
         }
     }
 
@@ -200,10 +200,10 @@ class RuntimeInspectorActivity : AppCompatActivity() {
                 appendLine("Target SDK: ${appInfo?.targetSdkVersion ?: "unknown"}")
                 appendLine("Native library directory: ${appInfo?.nativeLibraryDir ?: "not exposed"}")
                 appendLine("Declared activities visible to this app: ${activities.size}")
-                activities.take(100).forEach { a ->
+                activities.take(500).forEach { a ->
                     appendLine("• ${a.name} | exported=${a.exported} | process=${a.processName ?: target}")
                 }
-                if (activities.size > 100) appendLine("Activity list capped at 100 entries for memory safety.")
+                if (activities.size > 500) appendLine("Activity list capped at 500 entries for memory safety; package metadata can be queried again if needed.")
                 appendLine()
                 appendLine("RUNTIME ACCESS")
                 if (debuggable) {
