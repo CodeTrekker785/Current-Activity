@@ -93,10 +93,10 @@ class LogcatViewerActivity : AppCompatActivity() {
     }
 
     private fun loadLogs() {
-        status.text = "Reading the latest 500 lines available to this app…"
+        status.text = "Reading the latest 2,000 lines available to this app…"
         worker.execute {
             val result = try {
-                val process = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "500")
+                val process = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "2000")
                     .redirectErrorStream(true).start()
                 val text = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
                 val exit = process.waitFor()
