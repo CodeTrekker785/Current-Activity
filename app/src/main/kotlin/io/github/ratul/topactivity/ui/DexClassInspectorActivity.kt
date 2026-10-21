@@ -84,7 +84,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
         }
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(56)))
         root.addView(TextView(this).apply {
-            text = "Inspect class hierarchy, fields, methods, constructors, annotations and DEX instructions. Large APK reports are limited to protect phone memory. Processing is local."
+            text = "Inspect class hierarchy, fields, methods, constructors, annotations, strings and DEX instructions across APK DEX files. Search scans DEX entries independently of the visible class-page limit. Very large files/reports remain bounded to protect phone memory; processing is local."
             textSize = 15f
             setPadding(0, dp(12), 0, dp(12))
         })
@@ -1039,12 +1039,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
         private const val MAX_INSPECT_TOTAL_BYTES = MAX_INSPECT_TOTAL_MB * 1024 * 1024
         private const val MAX_DEX_BYTES = 16 * 1024 * 1024
         private const val INITIAL_CLASSES_PER_DEX = 120
-        private const val MAX_CLASSES_PER_DEX_HARD = 1000
-        private const val MAX_INSTRUCTIONS = 60
-        private const val MAX_STRINGS = 200
-        private const val MAX_REPORT_CHARS = 300_000
-        private const val MAX_REFERENCE_HITS = 5000
-        private const val MAX_VALUE_FLOW_METHODS = 300
+        private const val MAX_CLASSES_PER_DEX_HARD = 10000
+        private const val MAX_INSTRUCTIONS = 150
+        private const val MAX_STRINGS = 2000
+        private const val MAX_REPORT_CHARS = 600_000
+        private const val MAX_REFERENCE_HITS = 7500
+        private const val MAX_VALUE_FLOW_METHODS = 500
         private val DEX_NAME = Regex("(^|.*/)classes([0-9]+)?\\.dex")
     }
 }
