@@ -64,6 +64,10 @@ class RuntimeInspectorActivity : AppCompatActivity() {
             setOnClickListener { inspectAdvancedAccess() }
         }, LinearLayout.LayoutParams(-1, -2))
         root.addView(Button(this).apply {
+            text = "Open Logcat Viewer"
+            setOnClickListener { startActivity(Intent(this@RuntimeInspectorActivity, LogcatViewerActivity::class.java)) }
+        }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Button(this).apply {
             text = "View Runtime Report"
             setOnClickListener {
                 startActivity(Intent(this@RuntimeInspectorActivity, InspectorReportActivity::class.java).apply {
