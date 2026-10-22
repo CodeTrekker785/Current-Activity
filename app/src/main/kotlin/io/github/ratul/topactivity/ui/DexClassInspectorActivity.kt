@@ -427,147 +427,201 @@ class DexClassInspectorActivity : AppCompatActivity() {
     }
 
     private fun searchAllDex(uri: Uri, query: String) {
-        val term = query.trim()
-        if (term.isEmpty()) { filterReport(""); return }
-        val terms = term.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val rawTerm = query.trim()
+        if (rawTerm.isEmpty()) { filterReport(""); return }
+        val terms = rawTerm.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (inspectionRunning) return
         inspectionRunning = true
-        statusText.text = "Searching all DEX files for: " + terms.joinToString(", ")
-        resultText.text = "Search started…\nResults will appear as each DEX is scanned."
+        statusText.text = "Searching every supported DEX entry for: " + terms.joinToString(", ")
+        resultText.text = "Search started. Every supported classes*.dex entry will be checked sequentially; the report is capped to protect phone memory."
         Thread({
             val output = StringBuilder()
             var dexCount = 0
             var parsedCount = 0
             var skippedCount = 0
-            var totalMatches = 0
+            var classCount = 0
+            var fieldCount = 0
+            var methodCount = 0
+            var instructionCount = 0
+            var stringCount = 0
+            var displayedHits = 0
+            var reportTruncated = false
+            val reportLimit = MAX_REPORT_CHARS - 1800
+
+            fun emit(line: String = "") {
+                if (output.length + line.length + 1 <= reportLimit) {
+                    output.appendLine(line)
+                } else {
+                    reportTruncated = true
+                }
+            }
+            fun matches(vararg values: String?): Boolean =
+                values.filterNotNull().any { value -> terms.any { value.contains(it, ignoreCase = true) } }
+
             try {
                 contentResolver.openInputStream(uri)?.use { input ->
                     ZipInputStream(BufferedInputStream(input)).use { zip ->
                         var entry = zip.nextEntry
-                        while (entry != null && output.length < MAX_REPORT_CHARS) {
+                        while (entry != null) {
                             if (!entry.isDirectory && DEX_NAME.matches(entry.name)) {
                                 dexCount++
                                 val dexName = entry.name
                                 val bytes = readBounded(zip, MAX_DEX_BYTES)
                                 if (bytes == null) {
                                     skippedCount++
-                                    output.appendLine("\nDEX: " + dexName)
-                                    output.appendLine("SKIPPED: exceeds " + (MAX_DEX_BYTES / (1024 * 1024)) + " MB safety limit.")
+                                    emit("")
+                                    emit("DEX: $dexName")
+                                    emit("SKIPPED: DEX exceeds the per-file safety limit of \${MAX_DEX_BYTES / (1024 * 1024)} MB. It was not parsed.")
                                 } else {
                                     try {
                                         val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
                                         parsedCount++
-                                        val local = StringBuilder()
-                                        local.appendLine("\n========== DEX: " + dexName + " ==========")
-                                        var localMatches = 0
+                                        emit("")
+                                        emit("========== DEX: $dexName ==========")
+                                        emit("Declared classes: \${dex.classes.size}")
+                                        var dexClassHits = 0
+                                        var dexFieldHits = 0
+                                        var dexMethodHits = 0
+                                        var dexInstructionHits = 0
+                                        var dexStringHits = 0
+
                                         for (clazz in dex.classes) {
+                                            classCount++
                                             val className = type(clazz.type)
-                                            val classHit = terms.any { className.contains(it, ignoreCase = true) }
+                                            val superName = clazz.superclass?.let { type(it) } ?: "<none>"
+                                            val interfaces = clazz.interfaces.map { type(it) }
+                                            val classHit = matches(className, superName, interfaces.joinToString(" "))
                                             val matchingFields = clazz.fields.filter { field ->
-                                                terms.any { field.name.contains(it, true) || type(field.type).contains(it, true) }
+                                                matches(field.name, type(field.type), field.initialValue?.toString()) ||
+                                                    field.annotations.any { annotation ->
+                                                        matches(type(annotation.type), annotation.elements.joinToString { "\${it.name}=\${it.value}" })
+                                                    }
                                             }
                                             val matchingMethods = clazz.methods.filter { method ->
-                                                terms.any { candidate ->
-                                                    method.name.contains(candidate, true) ||
-                                                    type(method.returnType).contains(candidate, true) ||
-                                                    method.parameterTypes.any { type(it.toString()).contains(candidate, true) }
+                                                matches(
+                                                    method.name,
+                                                    type(method.returnType),
+                                                    method.parameterTypes.joinToString { type(it.toString()) },
+                                                    method.parameters.joinToString { it.name.orEmpty() + ":" + type(it.type) }
+                                                ) || method.annotations.any { annotation ->
+                                                    matches(type(annotation.type), annotation.elements.joinToString { "\${it.name}=\${it.value}" })
                                                 }
                                             }
+
                                             if (classHit || matchingFields.isNotEmpty() || matchingMethods.isNotEmpty()) {
-                                                local.appendLine("\nCLASS: " + className)
-                                                local.appendLine("ACCESS: " + flags(clazz.accessFlags))
-                                                local.appendLine("SUPERCLASS: " + (clazz.superclass?.let { type(it) } ?: "<none>"))
-                                                if (classHit) local.appendLine("MATCH: class name")
-                                                matchingFields.forEach { local.appendLine("MATCH FIELD: " + type(it.type) + " " + it.name) }
+                                                dexClassHits++
+                                                displayedHits++
+                                                emit("")
+                                                emit("CLASS RESULT: $className")
+                                                emit("  DEX: $dexName")
+                                                emit("  Access: \${flags(clazz.accessFlags)} (0x\${clazz.accessFlags.toString(16)})")
+                                                emit("  Superclass: $superName")
+                                                emit("  Interfaces: \${interfaces.joinToString().ifBlank { "<none>" }}")
+                                                emit("  Source file: \${clazz.sourceFile ?: "<not recorded>"}")
+                                                if (classHit) emit("  Match category: class / hierarchy")
+                                                if (classHit) {
+                                                    emit("  DECLARED FIELDS (\${clazz.fields.size}):")
+                                                    clazz.fields.forEach { field ->
+                                                        emit("    \${flags(field.accessFlags)} \${type(field.type)} \${field.name}" +
+                                                            (field.initialValue?.let { " = $it" } ?: ""))
+                                                    }
+                                                    emit("  DECLARED METHODS (\${clazz.methods.size}):")
+                                                    clazz.methods.forEach { method ->
+                                                        emit("    \${flags(method.accessFlags)} \${type(method.returnType)} \${method.name}(\${method.parameterTypes.joinToString { type(it.toString()) }})")
+                                                    }
+                                                }
+                                                matchingFields.forEach { field ->
+                                                    fieldCount++
+                                                    dexFieldHits++
+                                                    emit("  MATCH FIELD: \${flags(field.accessFlags)} \${type(field.type)} \${field.name}")
+                                                    emit("    Initial value: \${field.initialValue ?: "<none encoded>"}")
+                                                    field.annotations.forEach { annotation ->
+                                                        emit("    Annotation: \${type(annotation.type)} \${annotation.elements.joinToString { it.name + "=" + it.value }}")
+                                                    }
+                                                }
                                                 matchingMethods.forEach { method ->
-                                                    local.appendLine("MATCH METHOD: " + type(method.returnType) + " " + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + ")")
-                                                }
-                                                localMatches++
-                                            }
-                                            for (method in clazz.methods) {
-                                                val implementation = method.implementation ?: continue
-                                                val methodSignature = className + "->" + method.name + "(" + method.parameterTypes.joinToString { type(it.toString()) } + ")"
-                                                for ((instructionIndex, instruction) in implementation.instructions.withIndex()) {
-                                                    val rendered = renderInstruction(instruction)
-                                                    val reference = (instruction as? ReferenceInstruction)?.reference?.toString()
-                                                    val matchesSearch = terms.any { candidate ->
-                                                        rendered.contains(candidate, true) || (reference?.contains(candidate, true) == true)
+                                                    methodCount++
+                                                    dexMethodHits++
+                                                    val signature = "\${type(method.returnType)} \${className}->\${method.name}(\${method.parameterTypes.joinToString { type(it.toString()) }})"
+                                                    emit("  MATCH METHOD: $signature")
+                                                    emit("    Access: \${flags(method.accessFlags)} (0x\${method.accessFlags.toString(16)})")
+                                                    emit("    Parameters: \${method.parameters.mapIndexed { index, p -> "#$index \${p.name ?: "<unnamed>"}:\${type(p.type)}" }.joinToString().ifBlank { "<none>" }}")
+                                                    method.annotations.forEach { annotation ->
+                                                        emit("    Annotation: \${type(annotation.type)} \${annotation.elements.joinToString { it.name + "=" + it.value }}")
                                                     }
-                                                    val opcodeName = instruction.opcode.name
-                                                    val loadsOrProducesValue =
-                                                        opcodeName.startsWith("CONST") ||
-                                                        opcodeName.startsWith("MOVE") ||
-                                                        opcodeName.startsWith("MOVE_RESULT") ||
-                                                        opcodeName.startsWith("MOVE_EXCEPTION") ||
-                                                        opcodeName.contains("IGET") ||
-                                                        opcodeName.contains("SGET") ||
-                                                        opcodeName.contains("AGET") ||
-                                                        opcodeName.startsWith("NEW_") ||
-                                                        opcodeName.startsWith("FILLED_NEW_ARRAY") ||
-                                                        opcodeName.startsWith("INVOKE") ||
-                                                        opcodeName.startsWith("CHECK_CAST") ||
-                                                        opcodeName.startsWith("INSTANCE_OF") ||
-                                                        opcodeName.startsWith("ARRAY_LENGTH") ||
-                                                        opcodeName.startsWith("CMPL") ||
-                                                        opcodeName.startsWith("CMPG") ||
-                                                        opcodeName.startsWith("CMP_") ||
-                                                        opcodeName.startsWith("ADD_") ||
-                                                        opcodeName.startsWith("SUB_") ||
-                                                        opcodeName.startsWith("MUL_") ||
-                                                        opcodeName.startsWith("DIV_") ||
-                                                        opcodeName.startsWith("REM_") ||
-                                                        opcodeName.startsWith("AND_") ||
-                                                        opcodeName.startsWith("OR_") ||
-                                                        opcodeName.startsWith("XOR_") ||
-                                                        opcodeName.startsWith("SHL_") ||
-                                                        opcodeName.startsWith("SHR_") ||
-                                                        opcodeName.startsWith("USHR_") ||
-                                                        opcodeName.startsWith("NEG_") ||
-                                                        opcodeName.startsWith("NOT_") ||
-                                                        opcodeName.startsWith("INT_TO_") ||
-                                                        opcodeName.startsWith("LONG_TO_") ||
-                                                        opcodeName.startsWith("FLOAT_TO_") ||
-                                                        opcodeName.startsWith("DOUBLE_TO_")
-                                                    // Always report value loads/production in every scanned method, not only matches.
-                                                    if (loadsOrProducesValue || matchesSearch ||
-                                                        matchingMethods.any { it.name == method.name && it.parameterTypes == method.parameterTypes } ||
-                                                        classHit) {
-                                                        local.appendLine((if (loadsOrProducesValue) "VALUE/LOAD " else "INSN ") + methodSignature + " @" + instructionIndex + ": " + rendered)
-                                                        if (reference != null) local.appendLine("  REFERENCE: " + reference)
-                                                        localMatches++
+                                                    val impl = method.implementation
+                                                    if (impl == null) {
+                                                        emit("    Body: <no code item; possibly abstract/native>")
+                                                    } else {
+                                                        emit("    Registers: \${impl.registerCount}; code items: \${impl.instructions.size}")
+                                                        var address = 0
+                                                        var shown = 0
+                                                        for (ins in impl.instructions) {
+                                                            val rendered = renderInstruction(ins)
+                                                            val ref = (ins as? ReferenceInstruction)?.reference?.toString()
+                                                            if (matches(rendered, ref)) {
+                                                                instructionCount++
+                                                                dexInstructionHits++
+                                                                displayedHits++
+                                                                emit("    MATCH INSTRUCTION @0x\${address.toString(16)}: $rendered")
+                                                                if (ref != null) emit("      Target reference: $ref")
+                                                                shown++
+                                                            }
+                                                            address += ins.codeUnits
+                                                        }
+                                                        if (shown == 0) emit("    No matching instruction text in this method; match was in its signature/metadata.")
                                                     }
-                                                    if (local.length >= MAX_REPORT_CHARS / 2) break
                                                 }
-                                                if (local.length >= MAX_REPORT_CHARS / 2) break
+                                            } else {
+                                                // Still scan every method body, even after the visible report reaches its cap.
+                                                for (method in clazz.methods) {
+                                                    val impl = method.implementation ?: continue
+                                                    var address = 0
+                                                    for (ins in impl.instructions) {
+                                                        val rendered = renderInstruction(ins)
+                                                        val ref = (ins as? ReferenceInstruction)?.reference?.toString()
+                                                        if (matches(rendered, ref)) {
+                                                            instructionCount++
+                                                            dexInstructionHits++
+                                                            displayedHits++
+                                                            emit("")
+                                                            emit("INSTRUCTION REFERENCE: $className")
+                                                            emit("  DEX: $dexName")
+                                                            emit("  Method: \${type(method.returnType)} \${method.name}(\${method.parameterTypes.joinToString { type(it.toString()) }})")
+                                                            emit("  Offset: 0x\${address.toString(16)}")
+                                                            emit("  Instruction: $rendered")
+                                                            if (ref != null) emit("  Target: $ref")
+                                                        }
+                                                        address += ins.codeUnits
+                                                    }
+                                                }
                                             }
                                         }
-                                        local.appendLine("\n--- DEX STRING POOL matches ---")
-                                        var stringMatches = 0
+
+                                        // Scan the complete DEX string pool, not only strings referenced by visible results.
                                         for (ref in dex.stringReferences) {
-                                            if (local.length >= MAX_REPORT_CHARS / 2) break
                                             if (terms.any { ref.string.contains(it, ignoreCase = true) }) {
-                                                local.appendLine("STRING: " + ref.string.replace("\n", "\\n").replace("\r", "\\r"))
-                                                stringMatches++
+                                                stringCount++
+                                                dexStringHits++
+                                                displayedHits++
+                                                emit("STRING MATCH [$dexName]: " + ref.string.replace("\n", "\\n").replace("\r", "\\r"))
                                             }
                                         }
-                                        local.appendLine("Class/member matches: " + localMatches + "; string matches: " + stringMatches)
-                                        totalMatches += localMatches + stringMatches
-                                        if (localMatches + stringMatches == 0) local.appendLine("No matches in this DEX.")
-                                        synchronized(output) {
-                                            val remaining = MAX_REPORT_CHARS - output.length
-                                            if (remaining > 0) output.append(local, 0, minOf(local.length, remaining))
-                                        }
+                                        emit("DEX SUMMARY: classes checked=$classCount; class results=$dexClassHits; field results=$dexFieldHits; method results=$dexMethodHits; instruction results=$dexInstructionHits; string results=$dexStringHits.")
+                                    } catch (oom: OutOfMemoryError) {
+                                        throw oom
                                     } catch (ex: Exception) {
                                         skippedCount++
-                                        output.appendLine("\nDEX: " + dexName)
-                                        output.appendLine("SKIPPED: parse failed (" + (ex.message ?: ex.javaClass.simpleName) + ").")
+                                        emit("")
+                                        emit("DEX: $dexName")
+                                        emit("PARSE ERROR: \${ex.message ?: ex.javaClass.simpleName}")
                                     }
                                 }
                                 val snapshot = synchronized(output) { output.toString() }
                                 runOnUiThread {
                                     if (inspectionRunning) {
                                         resultText.text = snapshot
-                                        statusText.text = "Scanning " + dexName + " — " + parsedCount + " parsed, " + skippedCount + " skipped; " + totalMatches + " matches so far"
+                                        statusText.text = "Scanned $dexName — $parsedCount parsed, $skippedCount skipped; $displayedHits matching items counted"
                                     }
                                 }
                             }
@@ -575,23 +629,40 @@ class DexClassInspectorActivity : AppCompatActivity() {
                             entry = zip.nextEntry
                         }
                     }
-                } ?: output.appendLine("Could not open selected APK.")
+                } ?: emit("Could not open selected APK.")
             } catch (oom: OutOfMemoryError) {
-                output.appendLine("\nSEARCH INCOMPLETE: stopped to protect phone memory (out of memory). Try a smaller APK.")
+                emit("")
+                emit("SEARCH INCOMPLETE: stopped to protect phone memory. Not every DEX entry could be checked.")
             } catch (ex: Exception) {
-                output.appendLine("\nSEARCH INCOMPLETE: " + (ex.message ?: ex.javaClass.simpleName))
+                emit("")
+                emit("SEARCH INCOMPLETE: \${ex.message ?: ex.javaClass.simpleName}")
             }
-            if (output.length >= MAX_REPORT_CHARS) output.setLength(MAX_REPORT_CHARS)
-            output.appendLine("\nSEARCH SUMMARY: DEX entries found=" + dexCount + "; parsed=" + parsedCount + "; skipped=" + skippedCount + ".")
-            if (dexCount == 0) output.appendLine("No supported DEX entries found.")
-            if (skippedCount > 0) output.appendLine("WARNING: Search is incomplete because one or more DEX files were skipped.")
-            val finalText = synchronized(output) { output.toString() }
+
+            val summary = buildString {
+                appendLine()
+                appendLine("SEARCH SUMMARY")
+                appendLine("DEX entries found=$dexCount; parsed=$parsedCount; skipped/errors=$skippedCount.")
+                appendLine("Class definitions checked=$classCount; matching fields=$fieldCount; matching methods=$methodCount.")
+                appendLine("Matching instructions=$instructionCount; matching string-pool entries=$stringCount.")
+                appendLine("Report output capped=$reportTruncated.")
+                if (dexCount == 0) appendLine("No supported classes*.dex entries found in the selected file.")
+                if (skippedCount > 0) appendLine("WARNING: Search is incomplete because one or more DEX entries could not be parsed.")
+                if (reportTruncated) appendLine("WARNING: The report text reached the memory-safety cap. Scanning continued for remaining DEX entries, but some matching detail lines were omitted. Narrow the search term to display more detail.")
+                appendLine("Coverage: every supported classes*.dex ZIP entry was attempted. Individual DEX entries over the per-file byte limit or malformed entries are explicitly counted as skipped.")
+                appendLine("This is static analysis; dynamically loaded DEX, native code, reflection-only behavior, and server-side logic may not be visible.")
+            }
+            val finalText = synchronized(output) { output.toString() + summary }
             runOnUiThread {
                 inspectionRunning = false
                 exportText = finalText
                 displayedReport = finalText
                 resultText.text = finalText
-                statusText.text = if (skippedCount > 0) "Search finished — incomplete; see warnings" else "Search finished: " + totalMatches + " matches across " + parsedCount + " DEX files"
+                statusText.text = when {
+                    dexCount == 0 -> "No supported DEX files found"
+                    skippedCount > 0 -> "Search finished — incomplete; see skipped-entry warnings"
+                    reportTruncated -> "All DEX entries scanned; report details capped"
+                    else -> "Search finished: $displayedHits matching items across $parsedCount DEX files"
+                }
                 loadMoreButton.isEnabled = lastSelectedUri != null
             }
         }, "DexSearchWorker").start()
