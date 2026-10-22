@@ -471,14 +471,14 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                     skippedCount++
                                     emit("")
                                     emit("DEX: $dexName")
-                                    emit("SKIPPED: DEX exceeds the per-file safety limit of \${MAX_DEX_BYTES / (1024 * 1024)} MB. It was not parsed.")
+                                    emit("SKIPPED: DEX exceeds the per-file safety limit of ${MAX_DEX_BYTES / (1024 * 1024)} MB. It was not parsed.")
                                 } else {
                                     try {
                                         val dex = DexBackedDexFile(Opcodes.getDefault(), bytes)
                                         parsedCount++
                                         emit("")
                                         emit("========== DEX: $dexName ==========")
-                                        emit("Declared classes: \${dex.classes.size}")
+                                        emit("Declared classes: ${dex.classes.size}")
                                         var dexClassHits = 0
                                         var dexFieldHits = 0
                                         var dexMethodHits = 0
@@ -494,7 +494,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                             val matchingFields = clazz.fields.filter { field ->
                                                 matches(field.name, type(field.type), field.initialValue?.toString()) ||
                                                     field.annotations.any { annotation ->
-                                                        matches(type(annotation.type), annotation.elements.joinToString { "\${it.name}=\${it.value}" })
+                                                        matches(type(annotation.type), annotation.elements.joinToString { "${it.name}=${it.value}" })
                                                     }
                                             }
                                             val matchingMethods = clazz.methods.filter { method ->
@@ -504,7 +504,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                     method.parameterTypes.joinToString { type(it.toString()) },
                                                     method.parameters.joinToString { it.name.orEmpty() + ":" + type(it.type) }
                                                 ) || method.annotations.any { annotation ->
-                                                    matches(type(annotation.type), annotation.elements.joinToString { "\${it.name}=\${it.value}" })
+                                                    matches(type(annotation.type), annotation.elements.joinToString { "${it.name}=${it.value}" })
                                                 }
                                             }
 
@@ -514,46 +514,46 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                 emit("")
                                                 emit("CLASS RESULT: $className")
                                                 emit("  DEX: $dexName")
-                                                emit("  Access: \${flags(clazz.accessFlags)} (0x\${clazz.accessFlags.toString(16)})")
+                                                emit("  Access: ${flags(clazz.accessFlags)} (0x${clazz.accessFlags.toString(16)})")
                                                 emit("  Superclass: $superName")
-                                                emit("  Interfaces: \${interfaces.joinToString().ifBlank { "<none>" }}")
-                                                emit("  Source file: \${clazz.sourceFile ?: "<not recorded>"}")
+                                                emit("  Interfaces: ${interfaces.joinToString().ifBlank { "<none>" }}")
+                                                emit("  Source file: ${clazz.sourceFile ?: "<not recorded>"}")
                                                 if (classHit) emit("  Match category: class / hierarchy")
                                                 if (classHit) {
-                                                    emit("  DECLARED FIELDS (\${clazz.fields.size}):")
+                                                    emit("  DECLARED FIELDS (${clazz.fields.size}):")
                                                     clazz.fields.forEach { field ->
-                                                        emit("    \${flags(field.accessFlags)} \${type(field.type)} \${field.name}" +
+                                                        emit("    ${flags(field.accessFlags)} ${type(field.type)} ${field.name}" +
                                                             (field.initialValue?.let { " = $it" } ?: ""))
                                                     }
-                                                    emit("  DECLARED METHODS (\${clazz.methods.size}):")
+                                                    emit("  DECLARED METHODS (${clazz.methods.size}):")
                                                     clazz.methods.forEach { method ->
-                                                        emit("    \${flags(method.accessFlags)} \${type(method.returnType)} \${method.name}(\${method.parameterTypes.joinToString { type(it.toString()) }})")
+                                                        emit("    ${flags(method.accessFlags)} ${type(method.returnType)} ${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})")
                                                     }
                                                 }
                                                 matchingFields.forEach { field ->
                                                     fieldCount++
                                                     dexFieldHits++
-                                                    emit("  MATCH FIELD: \${flags(field.accessFlags)} \${type(field.type)} \${field.name}")
-                                                    emit("    Initial value: \${field.initialValue ?: "<none encoded>"}")
+                                                    emit("  MATCH FIELD: ${flags(field.accessFlags)} ${type(field.type)} ${field.name}")
+                                                    emit("    Initial value: ${field.initialValue ?: "<none encoded>"}")
                                                     field.annotations.forEach { annotation ->
-                                                        emit("    Annotation: \${type(annotation.type)} \${annotation.elements.joinToString { it.name + "=" + it.value }}")
+                                                        emit("    Annotation: ${type(annotation.type)} ${annotation.elements.joinToString { it.name + "=" + it.value }}")
                                                     }
                                                 }
                                                 matchingMethods.forEach { method ->
                                                     methodCount++
                                                     dexMethodHits++
-                                                    val signature = "\${type(method.returnType)} \${className}->\${method.name}(\${method.parameterTypes.joinToString { type(it.toString()) }})"
+                                                    val signature = "${type(method.returnType)} ${className}->${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})"
                                                     emit("  MATCH METHOD: $signature")
-                                                    emit("    Access: \${flags(method.accessFlags)} (0x\${method.accessFlags.toString(16)})")
-                                                    emit("    Parameters: \${method.parameters.mapIndexed { index, p -> "#$index \${p.name ?: "<unnamed>"}:\${type(p.type)}" }.joinToString().ifBlank { "<none>" }}")
+                                                    emit("    Access: ${flags(method.accessFlags)} (0x${method.accessFlags.toString(16)})")
+                                                    emit("    Parameters: ${method.parameters.mapIndexed { index, p -> "#$index ${p.name ?: "<unnamed>"}:${type(p.type)}" }.joinToString().ifBlank { "<none>" }}")
                                                     method.annotations.forEach { annotation ->
-                                                        emit("    Annotation: \${type(annotation.type)} \${annotation.elements.joinToString { it.name + "=" + it.value }}")
+                                                        emit("    Annotation: ${type(annotation.type)} ${annotation.elements.joinToString { it.name + "=" + it.value }}")
                                                     }
                                                     val impl = method.implementation
                                                     if (impl == null) {
                                                         emit("    Body: <no code item; possibly abstract/native>")
                                                     } else {
-                                                        emit("    Registers: \${impl.registerCount}; code items: \${impl.instructions.size}")
+                                                        emit("    Registers: ${impl.registerCount}; code items: ${impl.instructions.size}")
                                                         var address = 0
                                                         var shown = 0
                                                         for (ins in impl.instructions) {
@@ -563,7 +563,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                                 instructionCount++
                                                                 dexInstructionHits++
                                                                 displayedHits++
-                                                                emit("    MATCH INSTRUCTION @0x\${address.toString(16)}: $rendered")
+                                                                emit("    MATCH INSTRUCTION @0x${address.toString(16)}: $rendered")
                                                                 if (ref != null) emit("      Target reference: $ref")
                                                                 shown++
                                                             }
@@ -587,8 +587,8 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                             emit("")
                                                             emit("INSTRUCTION REFERENCE: $className")
                                                             emit("  DEX: $dexName")
-                                                            emit("  Method: \${type(method.returnType)} \${method.name}(\${method.parameterTypes.joinToString { type(it.toString()) }})")
-                                                            emit("  Offset: 0x\${address.toString(16)}")
+                                                            emit("  Method: ${type(method.returnType)} ${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})")
+                                                            emit("  Offset: 0x${address.toString(16)}")
                                                             emit("  Instruction: $rendered")
                                                             if (ref != null) emit("  Target: $ref")
                                                         }
@@ -614,7 +614,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                         skippedCount++
                                         emit("")
                                         emit("DEX: $dexName")
-                                        emit("PARSE ERROR: \${ex.message ?: ex.javaClass.simpleName}")
+                                        emit("PARSE ERROR: ${ex.message ?: ex.javaClass.simpleName}")
                                     }
                                 }
                                 val snapshot = synchronized(output) { output.toString() }
@@ -635,7 +635,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                 emit("SEARCH INCOMPLETE: stopped to protect phone memory. Not every DEX entry could be checked.")
             } catch (ex: Exception) {
                 emit("")
-                emit("SEARCH INCOMPLETE: \${ex.message ?: ex.javaClass.simpleName}")
+                emit("SEARCH INCOMPLETE: ${ex.message ?: ex.javaClass.simpleName}")
             }
 
             val summary = buildString {
