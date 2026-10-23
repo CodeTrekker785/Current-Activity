@@ -520,12 +520,12 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                 emit("  Source file: ${clazz.sourceFile ?: "<not recorded>"}")
                                                 if (classHit) emit("  Match category: class / hierarchy")
                                                 if (classHit) {
-                                                    emit("  DECLARED FIELDS (${clazz.fields.size}):")
+                                                    emit("  DECLARED FIELDS (${clazz.fields.count()}):")
                                                     clazz.fields.forEach { field ->
                                                         emit("    ${flags(field.accessFlags)} ${type(field.type)} ${field.name}" +
                                                             (field.initialValue?.let { " = $it" } ?: ""))
                                                     }
-                                                    emit("  DECLARED METHODS (${clazz.methods.size}):")
+                                                    emit("  DECLARED METHODS (${clazz.methods.count()}):")
                                                     clazz.methods.forEach { method ->
                                                         emit("    ${flags(method.accessFlags)} ${type(method.returnType)} ${method.name}(${method.parameterTypes.joinToString { type(it.toString()) }})")
                                                     }
@@ -553,7 +553,7 @@ class DexClassInspectorActivity : AppCompatActivity() {
                                                     if (impl == null) {
                                                         emit("    Body: <no code item; possibly abstract/native>")
                                                     } else {
-                                                        emit("    Registers: ${impl.registerCount}; code items: ${impl.instructions.size}")
+                                                        emit("    Registers: ${impl.registerCount}; code items: ${impl.instructions.count()}")
                                                         var address = 0
                                                         var shown = 0
                                                         for (ins in impl.instructions) {
